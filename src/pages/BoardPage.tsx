@@ -230,15 +230,23 @@ export function BoardPage({
     setTodos((items) => items.map((item) => (item.id === id ? updated : item)));
   }
 
-  function startEditingSelectedTodo() {
-    const id = selectedTodoIdRef.current;
+  function startEditingTodo(id: string) {
     const todo = todos.find((item) => item.id === id);
     if (!todo) {
       return;
     }
+    selectTodo(todo.id);
     setEditingTodoId(todo.id);
     setEditingDetail(todo.detail);
     setEditingError(null);
+  }
+
+  function startEditingSelectedTodo() {
+    const id = selectedTodoIdRef.current;
+    if (!id) {
+      return;
+    }
+    startEditingTodo(id);
   }
 
   function cancelEditingTodo() {
@@ -247,13 +255,17 @@ export function BoardPage({
     setEditingError(null);
   }
 
-  async function saveEditingTodo() {
+  async function saveEditingTodo({ cancelEmpty = false }: { cancelEmpty?: boolean } = {}) {
     if (!editingTodoId) {
       return;
     }
 
     const detail = editingDetail.trim();
     if (!detail) {
+      if (cancelEmpty) {
+        cancelEditingTodo();
+        return;
+      }
       setEditingError("Todo detail cannot be empty.");
       return;
     }
@@ -372,6 +384,12 @@ export function BoardPage({
         return;
       }
 
+      if (!isTextInput && event.key === "Enter" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+        event.preventDefault();
+        startEditingSelectedTodo();
+        return;
+      }
+
       if (event.key === "Tab" && event.shiftKey && !isTextInput) {
         event.preventDefault();
         void nextBoardView();
@@ -462,8 +480,10 @@ export function BoardPage({
                 editingDetail={editingDetail}
                 editingError={editingError}
                 onSelectTodo={selectTodo}
+                onStartEditingTodo={startEditingTodo}
                 onChangeEditingDetail={setEditingDetail}
                 onSaveEditingTodo={() => void saveEditingTodo()}
+                onBlurEditingTodo={() => void saveEditingTodo({ cancelEmpty: true })}
                 onCancelEditingTodo={cancelEditingTodo}
                 onCompleteTodo={(id) => void handleCompleteTodo(id)}
                 onReopenTodo={(id) => void handleReopenTodo(id)}

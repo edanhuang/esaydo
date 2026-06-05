@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Archive, Check, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { Todo } from "../../types";
 
@@ -13,8 +13,10 @@ interface TodoCardProps {
   editingError: string | null;
   dragging: boolean;
   onSelect: () => void;
+  onStartEditing: () => void;
   onChangeEditingValue: (value: string) => void;
   onSaveEditing: () => void;
+  onBlurEditing: () => void;
   onCancelEditing: () => void;
   onComplete: () => void;
   onReopen: () => void;
@@ -33,8 +35,10 @@ export function TodoCard({
   editingError,
   dragging,
   onSelect,
+  onStartEditing,
   onChangeEditingValue,
   onSaveEditing,
+  onBlurEditing,
   onCancelEditing,
   onComplete,
   onReopen,
@@ -45,18 +49,26 @@ export function TodoCard({
   onDragEnd,
 }: TodoCardProps) {
   const done = todo.status === "done";
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cardRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
+      window.requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) {
+          return;
+        }
+        const end = textarea.value.length;
+        textarea.focus();
+        textarea.setSelectionRange(end, end);
+        textarea.scrollTop = textarea.scrollHeight;
+      });
     }
   }, [editing]);
 
-  function handleEditKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") {
+  function handleEditKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       onSaveEditing();
       return;
@@ -75,6 +87,11 @@ export function TodoCard({
       role="button"
       tabIndex={0}
       onClick={onSelect}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        onStartEditing();
+      }}
+      onDragEnter={onDragOver}
       onDragOver={onDragOver}
       onDrop={onDrop}
       className={cn(
@@ -135,13 +152,14 @@ export function TodoCard({
             event.stopPropagation();
           }}
         >
-          <Input
-            ref={inputRef}
+          <Textarea
+            ref={textareaRef}
             value={editingValue}
             onChange={(event) => onChangeEditingValue(event.target.value)}
             onKeyDown={handleEditKeyDown}
+            onBlur={onBlurEditing}
             aria-invalid={Boolean(editingError)}
-            className="h-9 rounded-xl border-easydo-gold/50 bg-easydo-bgSoft text-easydo-cream shadow-easydo-glow"
+            className="max-h-40 min-h-20 resize-none rounded-xl border-easydo-gold/50 bg-easydo-bgSoft text-easydo-cream shadow-easydo-glow"
           />
           {editingError ? (
             <p role="alert" className="mt-1 text-xs text-destructive">
@@ -150,7 +168,7 @@ export function TodoCard({
           ) : null}
         </div>
       ) : (
-        <span className={cn("min-w-0 flex-1 text-sm font-medium leading-5 text-easydo-cream", done && "line-through text-easydo-textMuted")}>
+        <span className={cn("min-w-0 flex-1 whitespace-pre-wrap break-words text-sm font-medium leading-5 text-easydo-cream", done && "line-through text-easydo-textMuted")}>
           {todo.detail}
         </span>
       )}

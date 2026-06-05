@@ -214,12 +214,68 @@ describe("BoardPage", () => {
     fireEvent.keyDown(window, { key: "ArrowDown", metaKey: true });
     fireEvent.keyDown(window, { key: " " });
 
-    const editInput = screen.getByDisplayValue("已有任务");
+    const editInput = screen.getByDisplayValue("已有任务") as HTMLTextAreaElement;
+    await waitFor(() => expect(editInput).toHaveFocus());
+    expect(editInput.selectionStart).toBe("已有任务".length);
+    expect(editInput.selectionEnd).toBe("已有任务".length);
+
     fireEvent.change(editInput, { target: { value: "更新后的任务" } });
     fireEvent.keyDown(editInput, { key: "Enter" });
 
     await waitFor(() => expect(updateTodoDetail).toHaveBeenCalledWith("todo-1", "更新后的任务"));
     expect(await screen.findByText("更新后的任务")).toBeInTheDocument();
+  });
+
+  it("starts inline editing with plain Enter and double click", async () => {
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await screen.findByText("已有任务");
+    fireEvent.keyDown(window, { key: "ArrowDown", metaKey: true });
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    let editInput = screen.getByDisplayValue("已有任务") as HTMLTextAreaElement;
+    await waitFor(() => expect(editInput).toHaveFocus());
+    fireEvent.keyDown(editInput, { key: "Escape" });
+
+    fireEvent.doubleClick(screen.getByText("已有任务"));
+    editInput = screen.getByDisplayValue("已有任务") as HTMLTextAreaElement;
+    await waitFor(() => expect(editInput).toHaveFocus());
+    expect(editInput.selectionStart).toBe("已有任务".length);
+  });
+
+  it("exits inline editing on blur and saves multiline detail with Shift Enter", async () => {
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await screen.findByText("已有任务");
+    fireEvent.doubleClick(screen.getByText("已有任务"));
+    const editInput = screen.getByDisplayValue("已有任务") as HTMLTextAreaElement;
+    await waitFor(() => expect(editInput).toHaveFocus());
+
+    fireEvent.keyDown(editInput, { key: "Enter", shiftKey: true });
+    expect(updateTodoDetail).not.toHaveBeenCalled();
+
+    fireEvent.change(editInput, { target: { value: "已有任务\n第二行" } });
+    fireEvent.blur(editInput);
+
+    await waitFor(() => expect(updateTodoDetail).toHaveBeenCalledWith("todo-1", "已有任务\n第二行"));
+    await waitFor(() => expect(screen.queryByDisplayValue("已有任务\n第二行")).not.toBeInTheDocument());
+    expect(await screen.findByText(/已有任务\s+第二行/)).toBeInTheDocument();
+  });
+
+  it("exits inline editing on blur without saving empty detail", async () => {
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await screen.findByText("已有任务");
+    fireEvent.doubleClick(screen.getByText("已有任务"));
+    const editInput = screen.getByDisplayValue("已有任务") as HTMLTextAreaElement;
+    await waitFor(() => expect(editInput).toHaveFocus());
+
+    fireEvent.change(editInput, { target: { value: "   " } });
+    fireEvent.blur(editInput);
+
+    await waitFor(() => expect(screen.queryByDisplayValue("   ")).not.toBeInTheDocument());
+    expect(updateTodoDetail).not.toHaveBeenCalled();
+    expect(screen.getByText("已有任务")).toBeInTheDocument();
   });
 
   it("keeps todo shortcuts paused while settings is open", async () => {

@@ -34,6 +34,17 @@ describe("DailyPage", () => {
     expect(screen.queryByText("下周任务")).not.toBeInTheDocument();
   });
 
+  it("preserves multiline todo detail in daily view", async () => {
+    const range = getCurrentWeekRange();
+    vi.mocked(listTodos).mockResolvedValue([
+      makeTodo("todo-1", "第一行\n第二行", "active", dateInRange(range.start, 1), null),
+    ]);
+
+    render(<DailyPage onNavigate={vi.fn()} />);
+
+    expect(await screen.findByText(/第一行\s+第二行/)).toHaveClass("whitespace-pre-wrap");
+  });
+
   it("switches to another week with the week controls", async () => {
     const nextWeekCreatedAt = dateInRange(addWeeks(getCurrentWeekRange(), 1).start, 1);
     vi.mocked(listTodos).mockResolvedValue([

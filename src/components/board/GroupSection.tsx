@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import type { Group, Todo } from "../../types";
 import { TodoCard } from "./TodoCard";
 
@@ -11,8 +12,10 @@ interface GroupSectionProps {
   editingDetail: string;
   editingError: string | null;
   onSelectTodo: (id: string) => void;
+  onStartEditingTodo: (id: string) => void;
   onChangeEditingDetail: (value: string) => void;
   onSaveEditingTodo: () => void;
+  onBlurEditingTodo: () => void;
   onCancelEditingTodo: () => void;
   onCompleteTodo: (id: string) => void;
   onReopenTodo: (id: string) => void;
@@ -47,8 +50,10 @@ export function GroupSection({
   editingDetail,
   editingError,
   onSelectTodo,
+  onStartEditingTodo,
   onChangeEditingDetail,
   onSaveEditingTodo,
+  onBlurEditingTodo,
   onCancelEditingTodo,
   onCompleteTodo,
   onReopenTodo,
@@ -59,9 +64,41 @@ export function GroupSection({
   onReorderTodo,
   onDragEndTodo,
 }: GroupSectionProps) {
+  const localDraggedTodoIdRef = useRef<string | null>(null);
+
   function getDropPosition(event: React.DragEvent<Element>): DropPosition {
     const rect = event.currentTarget.getBoundingClientRect();
     return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+  }
+
+  function getDraggedTodoId(event: React.DragEvent<Element>) {
+    const payload = event.dataTransfer.getData("text/plain");
+    if (payload) {
+      try {
+        const parsed = JSON.parse(payload) as { groupId?: string; todoId?: string };
+        if (parsed.groupId === group.id && parsed.todoId) {
+          return parsed.todoId;
+        }
+      } catch {
+        return null;
+      }
+    }
+    return dragState?.groupId === group.id ? dragState.draggedTodoId : localDraggedTodoIdRef.current;
+  }
+
+  function handleDrop(
+    event: React.DragEvent<Element>,
+    targetTodoId: string,
+    position: DropPosition,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const draggedTodoId = getDraggedTodoId(event);
+    if (!draggedTodoId || draggedTodoId === targetTodoId) {
+      onDragEndTodo();
+      return;
+    }
+    onReorderTodo(group.id, draggedTodoId, targetTodoId, position);
   }
 
   return (
@@ -76,7 +113,14 @@ export function GroupSection({
         {todos.map((todo) => (
           <div key={todo.id} className="contents">
             {shouldShowPlaceholder(dragState, group.id, todo.id, "before") ? (
-              <TodoDropPlaceholder />
+              <TodoDropPlaceholder
+                position="before"
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(event) => handleDrop(event, todo.id, "before")}
+              />
             ) : null}
             <TodoCard
               todo={todo}
@@ -86,13 +130,16 @@ export function GroupSection({
               editingError={todo.id === editingTodoId ? editingError : null}
               dragging={dragState?.draggedTodoId === todo.id}
               onSelect={() => onSelectTodo(todo.id)}
+              onStartEditing={() => onStartEditingTodo(todo.id)}
               onChangeEditingValue={onChangeEditingDetail}
               onSaveEditing={onSaveEditingTodo}
+              onBlurEditing={onBlurEditingTodo}
               onCancelEditing={onCancelEditingTodo}
               onComplete={() => onCompleteTodo(todo.id)}
               onReopen={() => onReopenTodo(todo.id)}
               onArchive={() => onArchiveTodo(todo.id)}
               onDragStart={(event) => {
+                localDraggedTodoIdRef.current = todo.id;
                 event.dataTransfer.effectAllowed = "move";
                 event.dataTransfer.setData("text/plain", JSON.stringify({
                   groupId: group.id,
@@ -103,18 +150,7 @@ export function GroupSection({
               onDragOver={(event) => {
                 event.preventDefault();
                 event.dataTransfer.dropEffect = "move";
-                const payload = event.dataTransfer.getData("text/plain");
-                let draggedTodoId = dragState?.groupId === group.id ? dragState.draggedTodoId : null;
-                try {
-                  if (payload) {
-                    const parsed = JSON.parse(payload) as { groupId?: string; todoId?: string };
-                    if (parsed.groupId === group.id && parsed.todoId) {
-                      draggedTodoId = parsed.todoId;
-                    }
-                  }
-                } catch {
-                  return;
-                }
+                const draggedTodoId = getDraggedTodoId(event);
                 const position = getDropPosition(event);
                 if (!draggedTodoId || draggedTodoId === todo.id) {
                   return;
@@ -122,30 +158,22 @@ export function GroupSection({
                 onDragOverTodo(group.id, draggedTodoId, todo.id, position);
               }}
               onDrop={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                const payload = event.dataTransfer.getData("text/plain");
-                if (!payload) {
-                  onDragEndTodo();
-                  return;
-                }
-                try {
-                  const parsed = JSON.parse(payload) as { groupId?: string; todoId?: string };
-                  const position = getDropPosition(event);
-                  if (!parsed.todoId || parsed.groupId !== group.id || parsed.todoId === todo.id) {
-                    onDragEndTodo();
-                    return;
-                  }
-                  onReorderTodo(group.id, parsed.todoId, todo.id, position);
-                } catch {
-                  onDragEndTodo();
-                  return;
-                }
+                handleDrop(event, todo.id, getDropPosition(event));
               }}
-              onDragEnd={onDragEndTodo}
+              onDragEnd={() => {
+                localDraggedTodoIdRef.current = null;
+                onDragEndTodo();
+              }}
             />
             {shouldShowPlaceholder(dragState, group.id, todo.id, "after") ? (
-              <TodoDropPlaceholder />
+              <TodoDropPlaceholder
+                position="after"
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(event) => handleDrop(event, todo.id, "after")}
+              />
             ) : null}
           </div>
         ))}
@@ -167,8 +195,21 @@ function shouldShowPlaceholder(
   );
 }
 
-function TodoDropPlaceholder() {
+function TodoDropPlaceholder({
+  position,
+  onDragOver,
+  onDrop,
+}: {
+  position: DropPosition;
+  onDragOver: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDrop: (event: React.DragEvent<HTMLDivElement>) => void;
+}) {
   return (
-    <div className="h-10 rounded-easydo border border-dashed border-easydo-gold/70 bg-easydo-gold/10" />
+    <div
+      title={position === "before" ? "放到此任务之前" : "放到此任务之后"}
+      className="h-10 rounded-easydo border border-dashed border-easydo-gold/70 bg-easydo-gold/10"
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    />
   );
 }

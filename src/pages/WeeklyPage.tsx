@@ -131,7 +131,7 @@ export function DailyPage({
                               : "mt-2 size-2 shrink-0 rounded-full bg-primary"
                           }
                         />
-                        <span className={todo.status === "done" ? "min-w-0 break-words text-muted-foreground" : "min-w-0 break-words"}>
+                        <span className={todo.status === "done" ? "min-w-0 whitespace-pre-wrap break-words text-muted-foreground" : "min-w-0 whitespace-pre-wrap break-words"}>
                           {todo.detail}
                         </span>
                       </div>
