@@ -10,6 +10,8 @@ import {
   listGroups,
   listTodos,
   reopenTodo,
+  reorderTodosInGroup,
+  updateTodoDetail,
 } from "../lib/api";
 import type { BoardView, Group, Todo } from "../types";
 
@@ -21,6 +23,8 @@ vi.mock("../lib/api", () => ({
   listGroups: vi.fn(),
   listTodos: vi.fn(),
   reopenTodo: vi.fn(),
+  reorderTodosInGroup: vi.fn(),
+  updateTodoDetail: vi.fn(),
 }));
 
 const groups: Group[] = [
@@ -67,11 +71,20 @@ describe("BoardPage", () => {
       todos = todos.map((todo) => (todo.id === id ? updated : todo));
       return updated;
     });
+    vi.mocked(reorderTodosInGroup).mockResolvedValue();
     vi.mocked(archiveTodo).mockImplementation(async (id) => {
       const updated = {
         ...todos.find((todo) => todo.id === id)!,
         status: "archived" as const,
         archivedAt: "2026-06-04T10:01:00.000Z",
+      };
+      todos = todos.map((todo) => (todo.id === id ? updated : todo));
+      return updated;
+    });
+    vi.mocked(updateTodoDetail).mockImplementation(async (id, detail) => {
+      const updated = {
+        ...todos.find((todo) => todo.id === id)!,
+        detail,
       };
       todos = todos.map((todo) => (todo.id === id ? updated : todo));
       return updated;
@@ -91,6 +104,7 @@ describe("BoardPage", () => {
 
     expect(createTodo).toHaveBeenCalledWith("整理 MVP 验证", ["work"]);
     expect(await screen.findByText("整理 MVP 验证")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "所有2" })).toBeInTheDocument();
     expect(input).toHaveValue("");
   });
 
@@ -133,7 +147,8 @@ describe("BoardPage", () => {
     render(<BoardPage onNavigate={vi.fn()} />);
 
     await screen.findByText("第一条");
-    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "ArrowDown", metaKey: true });
+    fireEvent.keyDown(window, { key: "ArrowDown", metaKey: true });
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
 
     await waitFor(() => expect(completeTodo).toHaveBeenCalledWith("todo-2"));
@@ -144,7 +159,7 @@ describe("BoardPage", () => {
     await waitFor(() => expect(screen.queryByText("第二条")).not.toBeInTheDocument());
   });
 
-  it("reopens a done todo from the card action and Command Enter", async () => {
+  it("toggles a done todo from the status circle and Command Enter", async () => {
     todos = [makeTodo("todo-1", "已完成事项", "done", [groups[0]])];
     render(<BoardPage onNavigate={vi.fn()} />);
 
@@ -156,12 +171,69 @@ describe("BoardPage", () => {
 
     vi.mocked(reopenTodo).mockClear();
     vi.mocked(completeTodo).mockClear();
+    fireEvent.click(screen.getByText("已完成事项"));
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     await waitFor(() => expect(completeTodo).toHaveBeenCalledWith("todo-1"));
 
     vi.mocked(completeTodo).mockClear();
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     await waitFor(() => expect(reopenTodo).toHaveBeenCalledWith("todo-1"));
+  });
+
+  it("reorders todos in the same group with drag and drop", async () => {
+    todos = [
+      makeTodo("todo-1", "第一条", "active", [groups[0]], 0),
+      makeTodo("todo-2", "第二条", "active", [groups[0]], 1),
+    ];
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    const first = await screen.findByText("第一条");
+    const second = await screen.findByText("第二条");
+    const transfer = createDataTransfer();
+
+    fireEvent.dragStart(screen.getAllByTitle("拖拽排序")[0], { dataTransfer: transfer });
+    fireEvent.dragOver(second.closest("article")!, {
+      dataTransfer: transfer,
+      clientY: -1,
+    });
+    fireEvent.drop(second.closest("article")!, {
+      dataTransfer: transfer,
+      clientY: -1,
+    });
+
+    await waitFor(() => {
+      expect(reorderTodosInGroup).toHaveBeenCalledWith("work", ["todo-2", "todo-1"]);
+    });
+    expect(first).toBeInTheDocument();
+  });
+
+  it("edits the selected todo inline with Space and Enter", async () => {
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await screen.findByText("已有任务");
+    fireEvent.keyDown(window, { key: "ArrowDown", metaKey: true });
+    fireEvent.keyDown(window, { key: " " });
+
+    const editInput = screen.getByDisplayValue("已有任务");
+    fireEvent.change(editInput, { target: { value: "更新后的任务" } });
+    fireEvent.keyDown(editInput, { key: "Enter" });
+
+    await waitFor(() => expect(updateTodoDetail).toHaveBeenCalledWith("todo-1", "更新后的任务"));
+    expect(await screen.findByText("更新后的任务")).toBeInTheDocument();
+  });
+
+  it("keeps todo shortcuts paused while settings is open", async () => {
+    todos = [
+      makeTodo("todo-1", "第一条", "active", [groups[0]]),
+      makeTodo("todo-2", "第二条", "active", [groups[0]]),
+    ];
+    render(<BoardPage onNavigate={vi.fn()} settingsOpen />);
+
+    await screen.findByText("第一条");
+    fireEvent.keyDown(window, { key: "ArrowDown", metaKey: true });
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+
+    expect(completeTodo).not.toHaveBeenCalled();
   });
 });
 
@@ -186,7 +258,13 @@ function makeBoardView(id: string, name: string, sortOrder: number, viewGroups: 
   };
 }
 
-function makeTodo(id: string, detail: string, status: Todo["status"], todoGroups: Group[]): Todo {
+function makeTodo(
+  id: string,
+  detail: string,
+  status: Todo["status"],
+  todoGroups: Group[],
+  sortOrder = 0,
+): Todo {
   return {
     id,
     detail,
@@ -198,5 +276,32 @@ function makeTodo(id: string, detail: string, status: Todo["status"], todoGroups
     updatedAt: "2026-06-04T00:00:00.000Z",
     completedAt: status === "done" ? "2026-06-04T10:00:00.000Z" : null,
     archivedAt: status === "archived" ? "2026-06-04T10:01:00.000Z" : null,
+    groupSortOrders: todoGroups.map((group, index) => ({
+      groupId: group.id,
+      sortOrder: sortOrder + index,
+    })),
+  };
+}
+
+function createDataTransfer(): DataTransfer {
+  const store = new Map<string, string>();
+  return {
+    dropEffect: "move",
+    effectAllowed: "move",
+    files: [] as unknown as FileList,
+    items: [] as unknown as DataTransferItemList,
+    types: [],
+    clearData: vi.fn((type?: string) => {
+      if (type) {
+        store.delete(type);
+      } else {
+        store.clear();
+      }
+    }),
+    getData: vi.fn((type: string) => store.get(type) ?? ""),
+    setData: vi.fn((type: string, value: string) => {
+      store.set(type, value);
+    }),
+    setDragImage: vi.fn(),
   };
 }

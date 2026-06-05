@@ -59,6 +59,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         CREATE TABLE IF NOT EXISTS todo_groups (
           todo_id TEXT NOT NULL,
           group_id TEXT NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 0,
           PRIMARY KEY (todo_id, group_id),
           FOREIGN KEY (todo_id) REFERENCES todos(id) ON DELETE CASCADE,
           FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
@@ -97,10 +98,58 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
           FOREIGN KEY (todo_id) REFERENCES todos(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS app_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status);
         CREATE INDEX IF NOT EXISTS idx_todos_completed_at ON todos(completed_at);
         CREATE INDEX IF NOT EXISTS idx_todo_groups_group_id ON todo_groups(group_id);
         CREATE INDEX IF NOT EXISTS idx_board_view_groups_group_id ON board_view_groups(group_id);
+        "#,
+    )?;
+
+    ensure_todo_group_sort_order(conn)
+}
+
+fn ensure_todo_group_sort_order(conn: &Connection) -> rusqlite::Result<()> {
+    let has_sort_order = conn
+        .prepare("PRAGMA table_info(todo_groups)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?
+        .iter()
+        .any(|name| name == "sort_order");
+
+    if !has_sort_order {
+        conn.execute_batch(
+            r#"
+            ALTER TABLE todo_groups ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+
+            UPDATE todo_groups
+            SET sort_order = (
+              SELECT COUNT(*)
+              FROM todo_groups AS sibling_groups
+              INNER JOIN todos AS sibling_todos ON sibling_todos.id = sibling_groups.todo_id
+              INNER JOIN todos AS current_todo ON current_todo.id = todo_groups.todo_id
+              WHERE sibling_groups.group_id = todo_groups.group_id
+                AND (
+                  sibling_todos.created_at < current_todo.created_at
+                  OR (
+                    sibling_todos.created_at = current_todo.created_at
+                    AND sibling_groups.todo_id <= todo_groups.todo_id
+                  )
+                )
+            ) - 1;
+            "#,
+        )?;
+    }
+
+    conn.execute_batch(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_todo_groups_group_sort_order
+        ON todo_groups(group_id, sort_order);
         "#,
     )
 }

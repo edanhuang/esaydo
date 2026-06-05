@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from "react";
+import { Input } from "@/components/ui/input";
 
 interface TodoInputProps {
   value: string;
@@ -35,18 +36,20 @@ export function TodoInput({
   }
 
   return (
-    <div className="flex items-center gap-3 border-t border-border bg-background/95 px-5 py-4">
-      <div className="min-w-0 rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
+    <div className="border-t border-easydo-borderSoft bg-easydo-bg/90 px-5 py-4 backdrop-blur">
+      <div className="mx-auto flex max-w-5xl items-center gap-3 rounded-easydo-lg border border-easydo-border bg-easydo-bgSoft/95 p-2 shadow-easydo-card">
+        <div className="min-w-0 rounded-xl border border-easydo-border bg-easydo-surface px-3 py-2 text-sm text-easydo-textSecondary">
         {currentGroupName}
       </div>
-      <input
+        <Input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={handleKeyDown}
-        className="h-11 min-w-0 flex-1 rounded-md border border-border bg-card px-4 text-base text-foreground shadow-sm outline-none placeholder:text-muted-foreground"
+          className="h-12 min-w-0 flex-1 rounded-easydo border-easydo-border bg-easydo-bg text-base text-easydo-cream placeholder:text-easydo-textMuted focus-visible:border-easydo-gold focus-visible:ring-easydo-gold/25"
         placeholder="输入一条 Todo，按 Enter 保存"
         autoFocus
       />
+      </div>
     </div>
   );
 }

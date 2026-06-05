@@ -1,83 +1,84 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listWeeklyDone } from "../lib/api";
+import { listTodos } from "../lib/api";
+import { addWeeks, getCurrentWeekRange } from "../lib/dates";
 import type { Todo } from "../types";
-import { WeeklyPage } from "./WeeklyPage";
+import { DailyPage } from "./WeeklyPage";
 
 vi.mock("../lib/api", () => ({
-  listWeeklyDone: vi.fn(),
+  listTodos: vi.fn(),
 }));
 
-describe("WeeklyPage", () => {
-  let writeText: ReturnType<typeof vi.fn>;
-
+describe("DailyPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: {
-        writeText,
-      },
-    });
   });
 
-  it("renders completed todos grouped by date and copies markdown", async () => {
-    vi.mocked(listWeeklyDone).mockResolvedValue([
-      makeTodo("todo-1", "完成检查合并方案", "2026-06-04T09:00:00.000Z"),
-      makeTodo("todo-2", "修复映射问题", "2026-06-04T10:00:00.000Z"),
-      makeTodo("todo-3", "整理周报材料", "2026-06-05T10:00:00.000Z"),
+  it("renders done todos by completed date and active todos by created date", async () => {
+    const range = getCurrentWeekRange();
+    const completedAt = dateInRange(range.start, 3);
+    const activeCreatedAt = dateInRange(range.start, 4);
+    const nextWeekCreatedAt = dateInRange(addWeeks(range, 1).start, 1);
+    vi.mocked(listTodos).mockResolvedValue([
+      makeTodo("todo-1", "完成检查合并方案", "done", dateInRange(range.start, 1), completedAt),
+      makeTodo("todo-2", "整理周报材料", "active", activeCreatedAt, null),
+      makeTodo("todo-3", "下周任务", "active", nextWeekCreatedAt, null),
     ]);
 
-    render(<WeeklyPage onNavigate={vi.fn()} />);
+    render(<DailyPage onNavigate={vi.fn()} />);
 
-    expect(await screen.findByText("06-04")).toBeInTheDocument();
-    expect(screen.getByText("06-05")).toBeInTheDocument();
+    expect(await screen.findByText(formatShortDate(completedAt))).toBeInTheDocument();
+    expect(screen.getByText(formatShortDate(activeCreatedAt))).toBeInTheDocument();
     expect(screen.getByText("完成检查合并方案")).toBeInTheDocument();
-    expect(screen.getByText("修复映射问题")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "复制" }));
-
-    await waitFor(() =>
-      expect(writeText).toHaveBeenCalledWith(
-        [
-          "## 本周完成内容",
-          "",
-          "### 06-04",
-          "- 完成检查合并方案",
-          "- 修复映射问题",
-          "",
-          "### 06-05",
-          "- 整理周报材料",
-        ].join("\n"),
-      ),
-    );
+    expect(screen.getByText("整理周报材料")).toBeInTheDocument();
+    expect(screen.queryByText("下周任务")).not.toBeInTheDocument();
   });
 
-  it("copies a valid empty-week markdown message", async () => {
-    vi.mocked(listWeeklyDone).mockResolvedValue([]);
+  it("switches to another week with the week controls", async () => {
+    const nextWeekCreatedAt = dateInRange(addWeeks(getCurrentWeekRange(), 1).start, 1);
+    vi.mocked(listTodos).mockResolvedValue([
+      makeTodo("todo-1", "下周任务", "active", nextWeekCreatedAt, null),
+    ]);
 
-    render(<WeeklyPage onNavigate={vi.fn()} />);
+    render(<DailyPage onNavigate={vi.fn()} />);
 
-    expect(await screen.findByText("本周暂无完成事项")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "复制" }));
+    expect(await screen.findByText("这周暂无事项")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("下一周"));
 
-    expect(writeText).toHaveBeenCalledWith("## 本周完成内容\n\n本周暂无完成事项。");
+    await waitFor(() => expect(screen.getByText("下周任务")).toBeInTheDocument());
   });
 });
 
-function makeTodo(id: string, detail: string, completedAt: string): Todo {
+function makeTodo(
+  id: string,
+  detail: string,
+  status: Todo["status"],
+  createdAt: string,
+  completedAt: string | null,
+): Todo {
   return {
     id,
     detail,
-    status: "done",
+    status,
     extraText: null,
     groups: [],
     tags: [],
-    createdAt: "2026-06-04T00:00:00.000Z",
-    updatedAt: completedAt,
+    createdAt,
+    updatedAt: completedAt ?? createdAt,
     completedAt,
     archivedAt: null,
+    groupSortOrders: [],
   };
+}
+
+function dateInRange(start: Date, offsetDays: number): string {
+  const date = new Date(start);
+  date.setDate(start.getDate() + offsetDays);
+  date.setHours(10, 0, 0, 0);
+  return date.toISOString();
+}
+
+function formatShortDate(dateLike: string): string {
+  const date = new Date(dateLike);
+  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }

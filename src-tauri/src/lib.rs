@@ -25,11 +25,17 @@ pub fn run() {
             commands::complete_todo,
             commands::create_group,
             commands::create_todo,
+            commands::get_appearance_settings,
+            commands::get_shortcut_settings,
             commands::list_board_views,
             commands::list_groups,
             commands::list_todos,
             commands::list_weekly_done,
             commands::reopen_todo,
+            commands::reorder_todos_in_group,
+            commands::save_appearance_settings,
+            commands::save_shortcut_settings,
+            commands::update_todo_detail,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run EasyDo");

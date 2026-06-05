@@ -1,4 +1,5 @@
 import { Copy } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface CopyWorklogButtonProps {
   markdown: string;
@@ -12,13 +13,13 @@ export function CopyWorklogButton({ markdown, onCopied }: CopyWorklogButtonProps
   }
 
   return (
-    <button
+    <Button
       type="button"
       onClick={handleCopy}
-      className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground shadow-sm"
+      className="shadow-easydo-glow"
     >
-      <Copy className="h-4 w-4" />
+      <Copy data-icon="inline-start" />
       复制
-    </button>
+    </Button>
   );
 }

@@ -26,6 +26,10 @@ export interface Todo {
   completedAt: string | null;
   archivedAt: string | null;
   groups: Group[];
+  groupSortOrders: Array<{
+    groupId: string;
+    sortOrder: number;
+  }>;
   tags: Tag[];
 }
 
@@ -38,4 +42,29 @@ export interface BoardView {
   groups: Group[];
 }
 
-export type AppView = "board" | "weekly";
+export interface ShortcutBinding {
+  key: string;
+  metaKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+}
+
+export interface ShortcutSettings {
+  version: number;
+  openSettings: ShortcutBinding;
+  selectPreviousTodo: ShortcutBinding;
+  selectNextTodo: ShortcutBinding;
+  editSelectedTodo: ShortcutBinding;
+  toggleSelectedTodoDone: ShortcutBinding;
+}
+
+export type ThemeMode = "system" | "light" | "dark";
+export type ResolvedThemeMode = "light" | "dark";
+
+export interface AppearanceSettings {
+  version: number;
+  mode: ThemeMode;
+}
+
+export type AppView = "board" | "daily";

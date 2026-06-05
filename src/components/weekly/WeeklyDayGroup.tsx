@@ -7,11 +7,14 @@ interface WeeklyDayGroupProps {
 
 export function WeeklyDayGroup({ date, todos }: WeeklyDayGroupProps) {
   return (
-    <section className="border-t border-border py-4">
-      <h2 className="mb-3 text-sm font-medium text-foreground">{date}</h2>
-      <ul className="space-y-2">
+    <section className="rounded-easydo-lg border border-easydo-borderSoft bg-easydo-bgSoft/70 p-4 shadow-easydo-card">
+      <h2 className="mb-3 text-sm font-semibold text-easydo-lavenderSoft">{date}</h2>
+      <ul className="flex flex-col gap-2">
         {todos.map((todo) => (
-          <li key={todo.id} className="rounded-md bg-card px-3 py-2 text-sm shadow-sm">
+          <li
+            key={todo.id}
+            className="rounded-easydo border border-easydo-border bg-easydo-surface px-3.5 py-3 text-sm font-medium text-easydo-cream shadow-easydo-card"
+          >
             {todo.detail}
           </li>
         ))}

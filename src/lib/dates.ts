@@ -19,11 +19,51 @@ export function getCurrentWeekRange(now = new Date()): WeekRange {
   return { start, end };
 }
 
+export function addWeeks(range: WeekRange, offset: number): WeekRange {
+  const start = new Date(range.start);
+  start.setDate(start.getDate() + offset * 7);
+  const end = new Date(range.end);
+  end.setDate(end.getDate() + offset * 7);
+  return { start, end };
+}
+
+export function formatWeekLabel(range: WeekRange): string {
+  return `${range.start.toLocaleDateString()} - ${range.end.toLocaleDateString()}`;
+}
+
 export function formatDateHeading(dateLike: string): string {
   const date = new Date(dateLike);
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${month}-${day}`;
+}
+
+export function groupTodosByDailyDate(todos: Todo[], range: WeekRange): Array<[string, Todo[]]> {
+  const groups = new Map<string, Todo[]>();
+  for (let index = 0; index < 7; index += 1) {
+    const date = new Date(range.start);
+    date.setDate(range.start.getDate() + index);
+    groups.set(toDateKey(date), []);
+  }
+
+  for (const todo of todos) {
+    const dateLike = todo.status === "done" && todo.completedAt ? todo.completedAt : todo.createdAt;
+    const date = new Date(dateLike);
+    if (date < range.start || date > range.end) {
+      continue;
+    }
+    const key = toDateKey(date);
+    groups.get(key)?.push(todo);
+  }
+
+  return [...groups.entries()].map(([date, items]) => [
+    date,
+    items.sort((left, right) => {
+      const leftDate = left.status === "done" && left.completedAt ? left.completedAt : left.createdAt;
+      const rightDate = right.status === "done" && right.completedAt ? right.completedAt : right.createdAt;
+      return new Date(leftDate).getTime() - new Date(rightDate).getTime();
+    }),
+  ]);
 }
 
 export function groupTodosByCompletedDate(todos: Todo[]): Array<[string, Todo[]]> {
@@ -49,6 +89,13 @@ export function groupTodosByCompletedDate(todos: Todo[]): Array<[string, Todo[]]
       }),
     ] as [string, Todo[]])
     .sort(([left], [right]) => left.localeCompare(right));
+}
+
+function toDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function buildWeeklyMarkdown(groups: Array<[string, Todo[]]>): string {

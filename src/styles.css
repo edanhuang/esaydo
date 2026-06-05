@@ -1,43 +1,184 @@
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: 45 21% 97%;
-  --foreground: 220 18% 14%;
+  --font-heading: var(--font-sans);
+  --font-sans: "Geist Variable", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+
+  --background: 42 100% 98%;
+  --foreground: 233 47% 13%;
   --card: 0 0% 100%;
-  --card-foreground: 220 18% 14%;
-  --muted: 210 16% 93%;
-  --muted-foreground: 218 10% 42%;
-  --border: 214 16% 84%;
-  --primary: 172 58% 32%;
-  --primary-foreground: 0 0% 100%;
-  --accent: 38 58% 88%;
-  --accent-foreground: 220 18% 14%;
+  --card-foreground: 233 47% 13%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 233 47% 13%;
+  --primary: 40 90% 60%;
+  --primary-foreground: 233 47% 13%;
+  --secondary: 252 100% 96%;
+  --secondary-foreground: 244 45% 36%;
+  --muted: 42 70% 96%;
+  --muted-foreground: 247 16% 54%;
+  --accent: 252 100% 92%;
+  --accent-foreground: 244 45% 36%;
+  --destructive: 354 72% 63%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 42 38% 87%;
+  --input: 42 38% 87%;
+  --ring: 40 90% 60%;
+  --radius: 1rem;
+  --sidebar: 42 100% 96%;
+  --sidebar-foreground: 233 47% 13%;
+  --sidebar-primary: 40 90% 60%;
+  --sidebar-primary-foreground: 233 47% 13%;
+  --sidebar-accent: 252 100% 96%;
+  --sidebar-accent-foreground: 244 45% 36%;
+  --sidebar-border: 42 38% 87%;
+  --sidebar-ring: 40 90% 60%;
+
+  --easydo-bg: 42 100% 98%;
+  --easydo-bg-soft: 42 100% 96%;
+  --easydo-surface: 0 0% 100%;
+  --easydo-surface-warm: 44 100% 98%;
+  --easydo-surface-hover: 42 90% 95%;
+  --easydo-surface-active: 44 90% 91%;
+  --easydo-cream: 233 47% 13%;
+  --easydo-text: 233 47% 13%;
+  --easydo-text-secondary: 232 22% 40%;
+  --easydo-text-muted: 247 16% 54%;
+  --easydo-text-disabled: 252 14% 71%;
+  --easydo-gold: 40 90% 60%;
+  --easydo-gold-hover: 43 100% 71%;
+  --easydo-gold-active: 37 78% 49%;
+  --easydo-gold-soft: 47 100% 87%;
+  --easydo-lavender: 252 100% 83%;
+  --easydo-lavender-soft: 252 100% 95%;
+  --easydo-lavender-surface: 255 100% 98%;
+  --easydo-violet: 246 73% 70%;
+  --easydo-border: 42 38% 87%;
+  --easydo-border-soft: 42 45% 92%;
+  --easydo-border-lavender: 252 100% 91%;
+  --easydo-success: 148 50% 47%;
+  --easydo-warning: 37 78% 49%;
+  --easydo-danger: 354 72% 63%;
+  --easydo-info: 208 73% 55%;
+  --easydo-shadow-card: 0 1px 2px rgba(18, 22, 50, 0.06);
+  --easydo-shadow-glow: 0 0 0 1px rgba(245, 185, 63, 0.22);
+  --easydo-shadow-lavender: 0 0 0 1px rgba(185, 167, 255, 0.18);
 }
 
-* {
-  box-sizing: border-box;
+.dark {
+  --background: 235 55% 8%;
+  --foreground: 42 100% 95%;
+  --card: 236 43% 16%;
+  --card-foreground: 42 100% 95%;
+  --popover: 236 43% 16%;
+  --popover-foreground: 42 100% 95%;
+  --primary: 45 100% 70%;
+  --primary-foreground: 235 55% 8%;
+  --secondary: 240 37% 24%;
+  --secondary-foreground: 250 45% 86%;
+  --muted: 238 32% 22%;
+  --muted-foreground: 246 22% 58%;
+  --accent: 252 100% 83%;
+  --accent-foreground: 235 55% 8%;
+  --destructive: 354 100% 78%;
+  --destructive-foreground: 235 55% 8%;
+  --border: 235 33% 25%;
+  --input: 235 33% 25%;
+  --ring: 45 100% 70%;
+  --sidebar: 236 47% 12%;
+  --sidebar-foreground: 42 100% 95%;
+  --sidebar-primary: 45 100% 70%;
+  --sidebar-primary-foreground: 235 55% 8%;
+  --sidebar-accent: 240 37% 24%;
+  --sidebar-accent-foreground: 250 45% 86%;
+  --sidebar-border: 235 33% 25%;
+  --sidebar-ring: 45 100% 70%;
+
+  --easydo-bg: 235 55% 8%;
+  --easydo-bg-soft: 236 47% 12%;
+  --easydo-surface: 236 43% 16%;
+  --easydo-surface-warm: 236 43% 16%;
+  --easydo-surface-hover: 236 39% 21%;
+  --easydo-surface-active: 235 35% 33%;
+  --easydo-cream: 42 100% 95%;
+  --easydo-text: 42 100% 95%;
+  --easydo-text-secondary: 250 45% 86%;
+  --easydo-text-muted: 246 22% 58%;
+  --easydo-text-disabled: 247 15% 43%;
+  --easydo-gold: 45 100% 70%;
+  --easydo-gold-hover: 47 100% 77%;
+  --easydo-gold-active: 43 80% 58%;
+  --easydo-gold-soft: 45 80% 18%;
+  --easydo-lavender: 252 100% 83%;
+  --easydo-lavender-soft: 252 100% 90%;
+  --easydo-lavender-surface: 252 36% 18%;
+  --easydo-violet: 246 73% 70%;
+  --easydo-border: 235 33% 25%;
+  --easydo-border-soft: 235 32% 19%;
+  --easydo-border-lavender: 252 46% 45%;
+  --easydo-success: 145 61% 73%;
+  --easydo-warning: 45 100% 70%;
+  --easydo-danger: 354 100% 78%;
+  --easydo-info: 209 100% 78%;
+  --easydo-shadow-card: 0 1px 2px rgba(4, 5, 18, 0.32);
+  --easydo-shadow-glow: 0 0 0 1px rgba(255, 217, 102, 0.26);
+  --easydo-shadow-lavender: 0 0 0 1px rgba(185, 167, 255, 0.22);
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+@layer base {
+  * {
+    box-sizing: border-box;
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    height: 100%;
+    overflow: hidden;
+    user-select: none;
+    @apply bg-background text-foreground;
+  }
+
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+
+  input,
+  textarea,
+  [contenteditable="true"] {
+    user-select: text;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
-button,
-input {
-  font: inherit;
-}
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
 
-button:focus-visible,
-input:focus-visible {
-  outline: 2px solid hsl(var(--primary));
-  outline-offset: 2px;
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }

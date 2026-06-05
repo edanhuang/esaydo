@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { BoardView, Group, Todo } from "../types";
+import type { AppearanceSettings, BoardView, Group, ShortcutSettings, Todo } from "../types";
 
 export function listGroups(): Promise<Group[]> {
   return invoke("list_groups");
@@ -33,6 +33,30 @@ export function archiveTodo(id: string): Promise<Todo> {
   return invoke("archive_todo", { id });
 }
 
+export function updateTodoDetail(id: string, detail: string): Promise<Todo> {
+  return invoke("update_todo_detail", { id, detail });
+}
+
+export function reorderTodosInGroup(groupId: string, todoIds: string[]): Promise<void> {
+  return invoke("reorder_todos_in_group", { groupId, todoIds });
+}
+
 export function listWeeklyDone(startDate: string, endDate: string): Promise<Todo[]> {
   return invoke("list_weekly_done", { startDate, endDate });
+}
+
+export function getShortcutSettings(): Promise<ShortcutSettings> {
+  return invoke("get_shortcut_settings");
+}
+
+export function saveShortcutSettings(settings: ShortcutSettings): Promise<ShortcutSettings> {
+  return invoke("save_shortcut_settings", { settings });
+}
+
+export function getAppearanceSettings(): Promise<AppearanceSettings> {
+  return invoke("get_appearance_settings");
+}
+
+export function saveAppearanceSettings(settings: AppearanceSettings): Promise<AppearanceSettings> {
+  return invoke("save_appearance_settings", { settings });
 }
