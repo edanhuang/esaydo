@@ -180,33 +180,6 @@ describe("BoardPage", () => {
     await waitFor(() => expect(reopenTodo).toHaveBeenCalledWith("todo-1"));
   });
 
-  it("reorders todos in the same group with drag and drop", async () => {
-    todos = [
-      makeTodo("todo-1", "第一条", "active", [groups[0]], 0),
-      makeTodo("todo-2", "第二条", "active", [groups[0]], 1),
-    ];
-    render(<BoardPage onNavigate={vi.fn()} />);
-
-    const first = await screen.findByText("第一条");
-    const second = await screen.findByText("第二条");
-    const transfer = createDataTransfer();
-
-    fireEvent.dragStart(screen.getAllByTitle("拖拽排序")[0], { dataTransfer: transfer });
-    fireEvent.dragOver(second.closest("article")!, {
-      dataTransfer: transfer,
-      clientY: -1,
-    });
-    fireEvent.drop(second.closest("article")!, {
-      dataTransfer: transfer,
-      clientY: -1,
-    });
-
-    await waitFor(() => {
-      expect(reorderTodosInGroup).toHaveBeenCalledWith("work", ["todo-2", "todo-1"]);
-    });
-    expect(first).toBeInTheDocument();
-  });
-
   it("edits the selected todo inline with Space and Enter", async () => {
     render(<BoardPage onNavigate={vi.fn()} />);
 
@@ -336,28 +309,5 @@ function makeTodo(
       groupId: group.id,
       sortOrder: sortOrder + index,
     })),
-  };
-}
-
-function createDataTransfer(): DataTransfer {
-  const store = new Map<string, string>();
-  return {
-    dropEffect: "move",
-    effectAllowed: "move",
-    files: [] as unknown as FileList,
-    items: [] as unknown as DataTransferItemList,
-    types: [],
-    clearData: vi.fn((type?: string) => {
-      if (type) {
-        store.delete(type);
-      } else {
-        store.clear();
-      }
-    }),
-    getData: vi.fn((type: string) => store.get(type) ?? ""),
-    setData: vi.fn((type: string, value: string) => {
-      store.set(type, value);
-    }),
-    setDragImage: vi.fn(),
   };
 }

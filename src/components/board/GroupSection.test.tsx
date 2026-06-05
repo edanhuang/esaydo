@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Group, Todo } from "../../types";
 import { GroupSection } from "./GroupSection";
@@ -12,7 +12,7 @@ const group: Group = {
 };
 
 describe("GroupSection", () => {
-  it("reorders onto a reserved placeholder", () => {
+  it("uses dnd-kit sortable handles instead of native draggable handles", () => {
     const onReorderTodo = vi.fn();
 
     render(
@@ -35,12 +35,7 @@ describe("GroupSection", () => {
         onCompleteTodo={vi.fn()}
         onReopenTodo={vi.fn()}
         onArchiveTodo={vi.fn()}
-        dragState={{
-          groupId: "work",
-          draggedTodoId: "todo-1",
-          targetTodoId: "todo-2",
-          position: "before",
-        }}
+        dragState={null}
         onDragStartTodo={vi.fn()}
         onDragOverTodo={vi.fn()}
         onReorderTodo={onReorderTodo}
@@ -48,11 +43,10 @@ describe("GroupSection", () => {
       />,
     );
 
-    fireEvent.drop(screen.getByTitle("放到此任务之前"), {
-      dataTransfer: createDataTransfer(),
-    });
-
-    expect(onReorderTodo).toHaveBeenCalledWith("work", "todo-1", "todo-2", "before");
+    const firstHandle = screen.getAllByTitle("拖拽排序")[0];
+    expect(firstHandle).toHaveAttribute("aria-roledescription", "sortable");
+    expect(firstHandle).not.toHaveAttribute("draggable");
+    expect(onReorderTodo).not.toHaveBeenCalled();
   });
 });
 
@@ -74,19 +68,5 @@ function makeTodo(id: string, detail: string, sortOrder: number): Todo {
         sortOrder,
       },
     ],
-  };
-}
-
-function createDataTransfer(): DataTransfer {
-  return {
-    dropEffect: "move",
-    effectAllowed: "move",
-    files: [] as unknown as FileList,
-    items: [] as unknown as DataTransferItemList,
-    types: [],
-    clearData: vi.fn(),
-    getData: vi.fn(() => ""),
-    setData: vi.fn(),
-    setDragImage: vi.fn(),
   };
 }

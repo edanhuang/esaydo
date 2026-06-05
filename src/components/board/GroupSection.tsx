@@ -1,4 +1,20 @@
-import { useRef } from "react";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { Group, Todo } from "../../types";
 import { TodoCard } from "./TodoCard";
 
@@ -64,41 +80,40 @@ export function GroupSection({
   onReorderTodo,
   onDragEndTodo,
 }: GroupSectionProps) {
-  const localDraggedTodoIdRef = useRef<string | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 4,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
-  function getDropPosition(event: React.DragEvent<Element>): DropPosition {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+  const todoIds = todos.map((todo) => todo.id);
+
+  function handleDragStart(event: DragEndEvent) {
+    onDragStartTodo(group.id, String(event.active.id));
   }
 
-  function getDraggedTodoId(event: React.DragEvent<Element>) {
-    const payload = event.dataTransfer.getData("text/plain");
-    if (payload) {
-      try {
-        const parsed = JSON.parse(payload) as { groupId?: string; todoId?: string };
-        if (parsed.groupId === group.id && parsed.todoId) {
-          return parsed.todoId;
-        }
-      } catch {
-        return null;
-      }
+  function handleDragOver(event: DragOverEvent) {
+    const draggedTodoId = String(event.active.id);
+    const targetTodoId = event.over?.id ? String(event.over.id) : null;
+    if (!targetTodoId || draggedTodoId === targetTodoId) {
+      return;
     }
-    return dragState?.groupId === group.id ? dragState.draggedTodoId : localDraggedTodoIdRef.current;
+    onDragOverTodo(group.id, draggedTodoId, targetTodoId, getSortPosition(draggedTodoId, targetTodoId, todoIds));
   }
 
-  function handleDrop(
-    event: React.DragEvent<Element>,
-    targetTodoId: string,
-    position: DropPosition,
-  ) {
-    event.preventDefault();
-    event.stopPropagation();
-    const draggedTodoId = getDraggedTodoId(event);
-    if (!draggedTodoId || draggedTodoId === targetTodoId) {
+  function handleDragEnd(event: DragEndEvent) {
+    const draggedTodoId = String(event.active.id);
+    const targetTodoId = event.over?.id ? String(event.over.id) : null;
+    if (!targetTodoId || draggedTodoId === targetTodoId) {
       onDragEndTodo();
       return;
     }
-    onReorderTodo(group.id, draggedTodoId, targetTodoId, position);
+    onReorderTodo(group.id, draggedTodoId, targetTodoId, getSortPosition(draggedTodoId, targetTodoId, todoIds));
   }
 
   return (
@@ -109,107 +124,77 @@ export function GroupSection({
           {todos.length}
         </span>
       </div>
-      <div className="no-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-        {todos.map((todo) => (
-          <div key={todo.id} className="contents">
-            {shouldShowPlaceholder(dragState, group.id, todo.id, "before") ? (
-              <TodoDropPlaceholder
-                position="before"
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                }}
-                onDrop={(event) => handleDrop(event, todo.id, "before")}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        onDragCancel={onDragEndTodo}
+      >
+        <SortableContext items={todoIds} strategy={verticalListSortingStrategy}>
+          <div className="no-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+            {todos.map((todo) => (
+              <SortableTodoCard
+                key={todo.id}
+                todo={todo}
+                selected={todo.id === selectedTodoId}
+                editing={todo.id === editingTodoId}
+                editingValue={editingDetail}
+                editingError={todo.id === editingTodoId ? editingError : null}
+                dragging={dragState?.draggedTodoId === todo.id}
+                onSelect={() => onSelectTodo(todo.id)}
+                onStartEditing={() => onStartEditingTodo(todo.id)}
+                onChangeEditingValue={onChangeEditingDetail}
+                onSaveEditing={onSaveEditingTodo}
+                onBlurEditing={onBlurEditingTodo}
+                onCancelEditing={onCancelEditingTodo}
+                onComplete={() => onCompleteTodo(todo.id)}
+                onReopen={() => onReopenTodo(todo.id)}
+                onArchive={() => onArchiveTodo(todo.id)}
               />
-            ) : null}
-            <TodoCard
-              todo={todo}
-              selected={todo.id === selectedTodoId}
-              editing={todo.id === editingTodoId}
-              editingValue={editingDetail}
-              editingError={todo.id === editingTodoId ? editingError : null}
-              dragging={dragState?.draggedTodoId === todo.id}
-              onSelect={() => onSelectTodo(todo.id)}
-              onStartEditing={() => onStartEditingTodo(todo.id)}
-              onChangeEditingValue={onChangeEditingDetail}
-              onSaveEditing={onSaveEditingTodo}
-              onBlurEditing={onBlurEditingTodo}
-              onCancelEditing={onCancelEditingTodo}
-              onComplete={() => onCompleteTodo(todo.id)}
-              onReopen={() => onReopenTodo(todo.id)}
-              onArchive={() => onArchiveTodo(todo.id)}
-              onDragStart={(event) => {
-                localDraggedTodoIdRef.current = todo.id;
-                event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("text/plain", JSON.stringify({
-                  groupId: group.id,
-                  todoId: todo.id,
-                }));
-                onDragStartTodo(group.id, todo.id);
-              }}
-              onDragOver={(event) => {
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-                const draggedTodoId = getDraggedTodoId(event);
-                const position = getDropPosition(event);
-                if (!draggedTodoId || draggedTodoId === todo.id) {
-                  return;
-                }
-                onDragOverTodo(group.id, draggedTodoId, todo.id, position);
-              }}
-              onDrop={(event) => {
-                handleDrop(event, todo.id, getDropPosition(event));
-              }}
-              onDragEnd={() => {
-                localDraggedTodoIdRef.current = null;
-                onDragEndTodo();
-              }}
-            />
-            {shouldShowPlaceholder(dragState, group.id, todo.id, "after") ? (
-              <TodoDropPlaceholder
-                position="after"
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                }}
-                onDrop={(event) => handleDrop(event, todo.id, "after")}
-              />
-            ) : null}
+            ))}
           </div>
-        ))}
-      </div>
+        </SortableContext>
+      </DndContext>
     </section>
   );
 }
 
-function shouldShowPlaceholder(
-  dragState: GroupSectionProps["dragState"],
-  groupId: string,
-  todoId: string,
-  position: DropPosition,
-) {
-  return (
-    dragState?.groupId === groupId &&
-    dragState.targetTodoId === todoId &&
-    dragState.position === position
-  );
+function getSortPosition(draggedTodoId: string, targetTodoId: string, todoIds: string[]): DropPosition {
+  const draggedIndex = todoIds.indexOf(draggedTodoId);
+  const targetIndex = todoIds.indexOf(targetTodoId);
+  return draggedIndex < targetIndex ? "after" : "before";
 }
 
-function TodoDropPlaceholder({
-  position,
-  onDragOver,
-  onDrop,
-}: {
-  position: DropPosition;
-  onDragOver: (event: React.DragEvent<HTMLDivElement>) => void;
-  onDrop: (event: React.DragEvent<HTMLDivElement>) => void;
-}) {
+type SortableTodoCardProps = Omit<
+  React.ComponentProps<typeof TodoCard>,
+  "sortableStyle" | "onSortableNode" | "onDragHandleNode" | "dragHandleAttributes" | "dragHandleListeners"
+>;
+
+function SortableTodoCard(props: SortableTodoCardProps) {
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.todo.id });
+
   return (
-    <div
-      title={position === "before" ? "放到此任务之前" : "放到此任务之后"}
-      className="h-10 rounded-easydo border border-dashed border-easydo-gold/70 bg-easydo-gold/10"
-      onDragOver={onDragOver}
-      onDrop={onDrop}
+    <TodoCard
+      {...props}
+      dragging={props.dragging || isDragging}
+      sortableStyle={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      onSortableNode={setNodeRef}
+      onDragHandleNode={setActivatorNodeRef}
+      dragHandleAttributes={attributes}
+      dragHandleListeners={listeners}
     />
   );
 }

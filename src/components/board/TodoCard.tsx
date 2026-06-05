@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
+import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 import { Archive, Check, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,6 +13,11 @@ interface TodoCardProps {
   editingValue: string;
   editingError: string | null;
   dragging: boolean;
+  sortableStyle?: CSSProperties;
+  onSortableNode: (node: HTMLElement | null) => void;
+  onDragHandleNode: (node: HTMLElement | null) => void;
+  dragHandleAttributes: DraggableAttributes;
+  dragHandleListeners?: DraggableSyntheticListeners;
   onSelect: () => void;
   onStartEditing: () => void;
   onChangeEditingValue: (value: string) => void;
@@ -21,10 +27,6 @@ interface TodoCardProps {
   onComplete: () => void;
   onReopen: () => void;
   onArchive: () => void;
-  onDragStart: (event: React.DragEvent) => void;
-  onDragOver: (event: React.DragEvent) => void;
-  onDrop: (event: React.DragEvent) => void;
-  onDragEnd: () => void;
 }
 
 export function TodoCard({
@@ -34,6 +36,11 @@ export function TodoCard({
   editingValue,
   editingError,
   dragging,
+  sortableStyle,
+  onSortableNode,
+  onDragHandleNode,
+  dragHandleAttributes,
+  dragHandleListeners,
   onSelect,
   onStartEditing,
   onChangeEditingValue,
@@ -43,14 +50,9 @@ export function TodoCard({
   onComplete,
   onReopen,
   onArchive,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  onDragEnd,
 }: TodoCardProps) {
   const done = todo.status === "done";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const cardRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (editing) {
@@ -82,7 +84,8 @@ export function TodoCard({
 
   return (
     <article
-      ref={cardRef}
+      ref={onSortableNode}
+      style={sortableStyle}
       data-todo-card
       role="button"
       tabIndex={0}
@@ -91,11 +94,8 @@ export function TodoCard({
         event.stopPropagation();
         onStartEditing();
       }}
-      onDragEnter={onDragOver}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
       className={cn(
-        "group flex w-full items-center gap-2 rounded-easydo border px-2.5 py-2 text-left shadow-easydo-card transition duration-150 ease-out hover:-translate-y-px",
+        "group relative flex w-full items-center gap-1 rounded-easydo border py-2 pl-0.5 pr-2 text-left shadow-easydo-card transition duration-150 ease-out hover:-translate-y-px",
         selected
           ? "border-easydo-gold bg-easydo-surfaceHover shadow-easydo-glow"
           : "border-easydo-border bg-easydo-surface hover:border-easydo-gold/40 hover:bg-easydo-surfaceHover",
@@ -104,18 +104,13 @@ export function TodoCard({
       )}
     >
       <button
+        ref={onDragHandleNode}
         type="button"
-        draggable={!editing}
         title="拖拽排序"
         className="grid size-5 shrink-0 cursor-grab place-items-center rounded-md text-easydo-textMuted opacity-0 transition hover:bg-easydo-surfaceActive hover:text-easydo-cream active:cursor-grabbing group-hover:opacity-100 group-focus-within:opacity-100"
         onClick={(event) => event.stopPropagation()}
-        onDragStart={(event) => {
-          if (cardRef.current) {
-            event.dataTransfer.setDragImage(cardRef.current, 24, cardRef.current.offsetHeight / 2);
-          }
-          onDragStart(event);
-        }}
-        onDragEnd={onDragEnd}
+        {...dragHandleAttributes}
+        {...dragHandleListeners}
       >
         <GripVertical className="size-4" />
         <span className="sr-only">拖拽排序</span>
