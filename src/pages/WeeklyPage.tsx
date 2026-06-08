@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/layout/AppSidebar";
-import { listTodos } from "../lib/api";
+import { listDailyTodos } from "../lib/api";
 import {
   addWeeks,
   formatDateHeading,
@@ -34,7 +34,7 @@ export function DailyPage({
 
   useEffect(() => {
     setLoading(true);
-    listTodos()
+    listDailyTodos()
       .then((items) => {
         setTodos(items);
         setLoading(false);
@@ -128,10 +128,12 @@ export function DailyPage({
                           className={
                             todo.status === "done"
                               ? "mt-2 size-2 shrink-0 rounded-full bg-easydo-success"
-                              : "mt-2 size-2 shrink-0 rounded-full bg-primary"
+                              : todo.status === "archived"
+                                ? "mt-2 size-2 shrink-0 rounded-full bg-muted-foreground"
+                                : "mt-2 size-2 shrink-0 rounded-full bg-primary"
                           }
                         />
-                        <span className={todo.status === "done" ? "min-w-0 whitespace-pre-wrap break-words text-muted-foreground" : "min-w-0 whitespace-pre-wrap break-words"}>
+                        <span className={todo.status !== "active" ? "min-w-0 whitespace-pre-wrap break-words text-muted-foreground" : "min-w-0 whitespace-pre-wrap break-words"}>
                           {todo.detail}
                         </span>
                       </div>

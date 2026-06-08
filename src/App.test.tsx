@@ -7,6 +7,7 @@ import {
   archiveTodo,
   completeTodo,
   createTodo,
+  deleteTodo,
   getAppearanceSettings,
   getShortcutSettings,
   listBoardViews,
@@ -24,6 +25,7 @@ vi.mock("./lib/api", () => ({
   archiveTodo: vi.fn(),
   completeTodo: vi.fn(),
   createTodo: vi.fn(),
+  deleteTodo: vi.fn(),
   getAppearanceSettings: vi.fn(),
   getShortcutSettings: vi.fn(),
   listBoardViews: vi.fn(),
@@ -51,6 +53,7 @@ describe("App settings shortcuts", () => {
     vi.mocked(listBoardViews).mockResolvedValue(boardViews);
     vi.mocked(listTodos).mockResolvedValue(todos);
     vi.mocked(createTodo).mockRejectedValue(new Error("not used"));
+    vi.mocked(deleteTodo).mockRejectedValue(new Error("not used"));
     vi.mocked(completeTodo).mockRejectedValue(new Error("not used"));
     vi.mocked(reopenTodo).mockRejectedValue(new Error("not used"));
     vi.mocked(reorderTodosInGroup).mockRejectedValue(new Error("not used"));

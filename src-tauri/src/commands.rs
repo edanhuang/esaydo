@@ -145,6 +145,36 @@ pub fn list_todos(
 }
 
 #[tauri::command]
+pub fn list_daily_todos(state: State<'_, AppState>) -> CommandResult<Vec<TodoWithRelations>> {
+    let conn = lock_conn(&state)?;
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT id
+            FROM todos
+            ORDER BY
+              CASE
+                WHEN status = 'archived' AND archived_at IS NOT NULL THEN archived_at
+                WHEN status = 'done' AND completed_at IS NOT NULL THEN completed_at
+                ELSE created_at
+              END ASC,
+              created_at ASC
+            "#,
+        )
+        .map_err(to_string)?;
+
+    let ids = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(to_string)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(to_string)?;
+
+    ids.iter()
+        .map(|id| get_todo_with_relations(&conn, id).map_err(to_string))
+        .collect()
+}
+
+#[tauri::command]
 pub fn update_todo_detail(
     state: State<'_, AppState>,
     id: String,
@@ -251,6 +281,20 @@ pub fn reopen_todo(state: State<'_, AppState>, id: String) -> CommandResult<Todo
 #[tauri::command]
 pub fn archive_todo(state: State<'_, AppState>, id: String) -> CommandResult<TodoWithRelations> {
     transition_todo(&state, &id, "archived", "archived")
+}
+
+#[tauri::command]
+pub fn delete_todo(state: State<'_, AppState>, id: String) -> CommandResult<()> {
+    let conn = lock_conn(&state)?;
+    let affected = conn
+        .execute("DELETE FROM todos WHERE id = ?1", params![id])
+        .map_err(to_string)?;
+
+    if affected == 0 {
+        return Err("Todo not found".to_string());
+    }
+
+    Ok(())
 }
 
 #[tauri::command]

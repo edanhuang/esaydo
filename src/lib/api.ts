@@ -17,6 +17,10 @@ export function listTodos(boardViewId?: string): Promise<Todo[]> {
   return invoke("list_todos", { boardViewId: boardViewId ?? null });
 }
 
+export function listDailyTodos(): Promise<Todo[]> {
+  return invoke("list_daily_todos");
+}
+
 export function createTodo(detail: string, groupIds: string[]): Promise<Todo> {
   return invoke("create_todo", { detail, groupIds, tagIds: [] });
 }
@@ -31,6 +35,10 @@ export function reopenTodo(id: string): Promise<Todo> {
 
 export function archiveTodo(id: string): Promise<Todo> {
   return invoke("archive_todo", { id });
+}
+
+export function deleteTodo(id: string): Promise<void> {
+  return invoke("delete_todo", { id });
 }
 
 export function updateTodoDetail(id: string, detail: string): Promise<Todo> {

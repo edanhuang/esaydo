@@ -95,7 +95,7 @@ export function TodoCard({
         onStartEditing();
       }}
       className={cn(
-        "group relative flex w-full items-center gap-1 rounded-easydo border py-2 pl-0.5 pr-2 text-left shadow-easydo-card transition duration-150 ease-out hover:-translate-y-px",
+        "group relative flex w-full items-center gap-px rounded-easydo border py-2 pl-px pr-2 text-left shadow-easydo-card transition duration-150 ease-out hover:-translate-y-px",
         selected
           ? "border-easydo-gold bg-easydo-surfaceHover shadow-easydo-glow"
           : "border-easydo-border bg-easydo-surface hover:border-easydo-gold/40 hover:bg-easydo-surfaceHover",
@@ -107,7 +107,7 @@ export function TodoCard({
         ref={onDragHandleNode}
         type="button"
         title="拖拽排序"
-        className="grid size-5 shrink-0 cursor-grab place-items-center rounded-md text-easydo-textMuted opacity-0 transition hover:bg-easydo-surfaceActive hover:text-easydo-cream active:cursor-grabbing group-hover:opacity-100 group-focus-within:opacity-100"
+        className="grid size-4 shrink-0 cursor-grab place-items-center rounded-md text-easydo-textMuted opacity-0 transition hover:bg-easydo-surfaceActive hover:text-easydo-cream active:cursor-grabbing group-hover:opacity-100 group-focus-within:opacity-100"
         onClick={(event) => event.stopPropagation()}
         {...dragHandleAttributes}
         {...dragHandleListeners}

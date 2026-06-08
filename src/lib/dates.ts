@@ -47,7 +47,7 @@ export function groupTodosByDailyDate(todos: Todo[], range: WeekRange): Array<[s
   }
 
   for (const todo of todos) {
-    const dateLike = todo.status === "done" && todo.completedAt ? todo.completedAt : todo.createdAt;
+    const dateLike = getDailyDate(todo);
     const date = new Date(dateLike);
     if (date < range.start || date > range.end) {
       continue;
@@ -59,11 +59,19 @@ export function groupTodosByDailyDate(todos: Todo[], range: WeekRange): Array<[s
   return [...groups.entries()].map(([date, items]) => [
     date,
     items.sort((left, right) => {
-      const leftDate = left.status === "done" && left.completedAt ? left.completedAt : left.createdAt;
-      const rightDate = right.status === "done" && right.completedAt ? right.completedAt : right.createdAt;
-      return new Date(leftDate).getTime() - new Date(rightDate).getTime();
+      return new Date(getDailyDate(left)).getTime() - new Date(getDailyDate(right)).getTime();
     }),
   ]);
+}
+
+function getDailyDate(todo: Todo): string {
+  if (todo.status === "archived" && todo.archivedAt) {
+    return todo.archivedAt;
+  }
+  if (todo.status === "done" && todo.completedAt) {
+    return todo.completedAt;
+  }
+  return todo.createdAt;
 }
 
 export function groupTodosByCompletedDate(todos: Todo[]): Array<[string, Todo[]]> {

@@ -1,12 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listTodos } from "../lib/api";
+import { listDailyTodos } from "../lib/api";
 import { addWeeks, getCurrentWeekRange } from "../lib/dates";
 import type { Todo } from "../types";
 import { DailyPage } from "./WeeklyPage";
 
 vi.mock("../lib/api", () => ({
-  listTodos: vi.fn(),
+  listDailyTodos: vi.fn(),
 }));
 
 describe("DailyPage", () => {
@@ -19,7 +19,7 @@ describe("DailyPage", () => {
     const completedAt = dateInRange(range.start, 3);
     const activeCreatedAt = dateInRange(range.start, 4);
     const nextWeekCreatedAt = dateInRange(addWeeks(range, 1).start, 1);
-    vi.mocked(listTodos).mockResolvedValue([
+    vi.mocked(listDailyTodos).mockResolvedValue([
       makeTodo("todo-1", "完成检查合并方案", "done", dateInRange(range.start, 1), completedAt),
       makeTodo("todo-2", "整理周报材料", "active", activeCreatedAt, null),
       makeTodo("todo-3", "下周任务", "active", nextWeekCreatedAt, null),
@@ -36,7 +36,7 @@ describe("DailyPage", () => {
 
   it("preserves multiline todo detail in daily view", async () => {
     const range = getCurrentWeekRange();
-    vi.mocked(listTodos).mockResolvedValue([
+    vi.mocked(listDailyTodos).mockResolvedValue([
       makeTodo("todo-1", "第一行\n第二行", "active", dateInRange(range.start, 1), null),
     ]);
 
@@ -45,9 +45,22 @@ describe("DailyPage", () => {
     expect(await screen.findByText(/第一行\s+第二行/)).toHaveClass("whitespace-pre-wrap");
   });
 
+  it("renders archived todos by archived date", async () => {
+    const range = getCurrentWeekRange();
+    const archivedAt = dateInRange(range.start, 2);
+    vi.mocked(listDailyTodos).mockResolvedValue([
+      makeTodo("todo-1", "已归档任务", "archived", dateInRange(range.start, 0), null, archivedAt),
+    ]);
+
+    render(<DailyPage onNavigate={vi.fn()} />);
+
+    expect(await screen.findByText(formatShortDate(archivedAt))).toBeInTheDocument();
+    expect(screen.getByText("已归档任务")).toBeInTheDocument();
+  });
+
   it("switches to another week with the week controls", async () => {
     const nextWeekCreatedAt = dateInRange(addWeeks(getCurrentWeekRange(), 1).start, 1);
-    vi.mocked(listTodos).mockResolvedValue([
+    vi.mocked(listDailyTodos).mockResolvedValue([
       makeTodo("todo-1", "下周任务", "active", nextWeekCreatedAt, null),
     ]);
 
@@ -66,6 +79,7 @@ function makeTodo(
   status: Todo["status"],
   createdAt: string,
   completedAt: string | null,
+  archivedAt: string | null = null,
 ): Todo {
   return {
     id,
@@ -77,7 +91,7 @@ function makeTodo(
     createdAt,
     updatedAt: completedAt ?? createdAt,
     completedAt,
-    archivedAt: null,
+    archivedAt,
     groupSortOrders: [],
   };
 }

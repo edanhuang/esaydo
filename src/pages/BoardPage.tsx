@@ -3,6 +3,7 @@ import {
   archiveTodo,
   completeTodo,
   createTodo,
+  deleteTodo,
   listBoardViews,
   listGroups,
   listTodos,
@@ -255,23 +256,23 @@ export function BoardPage({
     setEditingError(null);
   }
 
-  async function saveEditingTodo({ cancelEmpty = false }: { cancelEmpty?: boolean } = {}) {
+  async function saveEditingTodo() {
     if (!editingTodoId) {
       return;
     }
 
+    const todoId = editingTodoId;
     const detail = editingDetail.trim();
     if (!detail) {
-      if (cancelEmpty) {
-        cancelEditingTodo();
-        return;
-      }
-      setEditingError("Todo detail cannot be empty.");
+      await deleteTodo(todoId);
+      setTodos((items) => items.filter((item) => item.id !== todoId));
+      selectTodo(null);
+      cancelEditingTodo();
       return;
     }
 
-    const updated = await updateTodoDetail(editingTodoId, detail);
-    setTodos((items) => items.map((item) => (item.id === editingTodoId ? updated : item)));
+    const updated = await updateTodoDetail(todoId, detail);
+    setTodos((items) => items.map((item) => (item.id === todoId ? updated : item)));
     selectTodo(updated.id);
     cancelEditingTodo();
   }
@@ -483,7 +484,7 @@ export function BoardPage({
                 onStartEditingTodo={startEditingTodo}
                 onChangeEditingDetail={setEditingDetail}
                 onSaveEditingTodo={() => void saveEditingTodo()}
-                onBlurEditingTodo={() => void saveEditingTodo({ cancelEmpty: true })}
+                onBlurEditingTodo={() => void saveEditingTodo()}
                 onCancelEditingTodo={cancelEditingTodo}
                 onCompleteTodo={(id) => void handleCompleteTodo(id)}
                 onReopenTodo={(id) => void handleReopenTodo(id)}

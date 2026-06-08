@@ -6,6 +6,7 @@ import {
   archiveTodo,
   completeTodo,
   createTodo,
+  deleteTodo,
   listBoardViews,
   listGroups,
   listTodos,
@@ -19,6 +20,7 @@ vi.mock("../lib/api", () => ({
   archiveTodo: vi.fn(),
   completeTodo: vi.fn(),
   createTodo: vi.fn(),
+  deleteTodo: vi.fn(),
   listBoardViews: vi.fn(),
   listGroups: vi.fn(),
   listTodos: vi.fn(),
@@ -52,6 +54,9 @@ describe("BoardPage", () => {
       const created = makeTodo("todo-created", detail, "active", groups.filter((group) => groupIds.includes(group.id)));
       todos = [...todos, created];
       return created;
+    });
+    vi.mocked(deleteTodo).mockImplementation(async (id) => {
+      todos = todos.filter((todo) => todo.id !== id);
     });
     vi.mocked(completeTodo).mockImplementation(async (id) => {
       const updated = {
@@ -235,7 +240,7 @@ describe("BoardPage", () => {
     expect(await screen.findByText(/已有任务\s+第二行/)).toBeInTheDocument();
   });
 
-  it("exits inline editing on blur without saving empty detail", async () => {
+  it("deletes a todo when inline editing is cleared and blurred", async () => {
     render(<BoardPage onNavigate={vi.fn()} />);
 
     await screen.findByText("已有任务");
@@ -247,8 +252,25 @@ describe("BoardPage", () => {
     fireEvent.blur(editInput);
 
     await waitFor(() => expect(screen.queryByDisplayValue("   ")).not.toBeInTheDocument());
+    expect(deleteTodo).toHaveBeenCalledWith("todo-1");
     expect(updateTodoDetail).not.toHaveBeenCalled();
-    expect(screen.getByText("已有任务")).toBeInTheDocument();
+    expect(screen.queryByText("已有任务")).not.toBeInTheDocument();
+  });
+
+  it("deletes a todo when empty inline editing is submitted with Enter", async () => {
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await screen.findByText("已有任务");
+    fireEvent.doubleClick(screen.getByText("已有任务"));
+    const editInput = screen.getByDisplayValue("已有任务") as HTMLTextAreaElement;
+    await waitFor(() => expect(editInput).toHaveFocus());
+
+    fireEvent.change(editInput, { target: { value: "" } });
+    fireEvent.keyDown(editInput, { key: "Enter" });
+
+    await waitFor(() => expect(deleteTodo).toHaveBeenCalledWith("todo-1"));
+    expect(updateTodoDetail).not.toHaveBeenCalled();
+    expect(screen.queryByText("已有任务")).not.toBeInTheDocument();
   });
 
   it("keeps todo shortcuts paused while settings is open", async () => {
