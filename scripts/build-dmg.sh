@@ -12,8 +12,23 @@ else
   exit 1
 fi
 
-npm run tauri build
+targets=(
+  "x86_64-apple-darwin:x86_64"
+  "aarch64-apple-darwin:arm64"
+)
 
-echo
-echo "DMG:"
-echo "$(pwd)/src-tauri/target/release/bundle/dmg/EasyDo_0.1.0_x64.dmg"
+for entry in "${targets[@]}"; do
+  target="${entry%%:*}"
+  arch="${entry##*:}"
+
+  rustup target add "$target"
+  bash scripts/prepare-cli.sh release "$target"
+  npx tauri build --target "$target"
+
+  app_path="src-tauri/target/$target/release/bundle/macos/EasyDo.app"
+  bash scripts/verify-macos-bundle.sh "$app_path" "$arch"
+
+  echo
+  echo "DMG ($arch):"
+  find "src-tauri/target/$target/release/bundle/dmg" -maxdepth 1 -name '*.dmg' -print
+done

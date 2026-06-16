@@ -1,0 +1,10 @@
+{
+  "skills": [
+    {
+      "name": "easydo",
+      "version": "0.3.0",
+      "description": "通过 EasyDo CLI 管理 Todo；仅在用户显式允许 subagents 时并行编排，否则由单 Agent 保守同步实际工作结果。",
+      "path": "easydo"
+    }
+  ]
+}

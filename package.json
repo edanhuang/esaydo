@@ -9,7 +9,10 @@
     "check": "tsc --noEmit",
     "test": "vitest run",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev"
+    "prepare:cli:dev": "bash scripts/prepare-cli.sh debug",
+    "prepare:cli:release": "bash scripts/prepare-cli.sh release",
+    "tauri:dev": "npm run prepare:cli:dev && tauri dev",
+    "tauri:build": "npm run prepare:cli:release && tauri build"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
