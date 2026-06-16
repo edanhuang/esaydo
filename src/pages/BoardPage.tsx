@@ -1,14 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  DndContext,
+  PointerSensor,
+  pointerWithin,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
   archiveTodo,
   completeTodo,
+  countInboxTodos,
   createTodo,
   deleteTodo,
+  getSelectedBoardViewId,
   listBoardViews,
   listGroups,
   listTodos,
+  moveTodoFromInbox,
   reopenTodo,
   reorderTodosInGroup,
+  saveSelectedBoardViewId,
+  setBoardViewGroupMembership,
   updateTodoDetail,
 } from "../lib/api";
 import {
@@ -16,8 +30,13 @@ import {
   isTextEditingTarget,
   shortcutMatches,
 } from "../lib/shortcuts";
+import { toggleChecklistLineAtIndex } from "../lib/checklist";
 import type { AppView, BoardView, Group, ShortcutSettings, Todo } from "../types";
 import { GroupSection } from "../components/board/GroupSection";
+import {
+  BoardViewSwitcher,
+  type BoardViewTransitionDirection,
+} from "../components/board/BoardViewSwitcher";
 import { TodoInput } from "../components/board/TodoInput";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 
@@ -39,25 +58,54 @@ export function BoardPage({
   const [groups, setGroups] = useState<Group[]>([]);
   const [boardViews, setBoardViews] = useState<BoardView[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [inboxCount, setInboxCount] = useState(0);
   const [input, setInput] = useState("");
   const [currentGroupIndex, setCurrentGroupIndex] = useState(0);
   const [currentBoardViewIndex, setCurrentBoardViewIndex] = useState(0);
+  const [boardViewTransitionDirection, setBoardViewTransitionDirection] =
+    useState<BoardViewTransitionDirection>("right");
+  const [boardViewTransitionKey, setBoardViewTransitionKey] = useState(0);
   const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null);
   const selectedTodoIdRef = useRef<string | null>(null);
+  const todoRequestIdRef = useRef(0);
+  const windowFocusedRef = useRef(true);
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [editingDetail, setEditingDetail] = useState("");
   const [editingError, setEditingError] = useState<string | null>(null);
+  const [lastCreatedTodoId, setLastCreatedTodoId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{
     groupId: string;
     draggedTodoId: string;
     targetTodoId: string | null;
     position: "before" | "after";
   } | null>(null);
+  const [inboxDraggedTodoId, setInboxDraggedTodoId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const currentGroup = groups[currentGroupIndex] ?? null;
+  const inboxGroup = useMemo(
+    () => groups.find((group) => group.systemKey === "inbox") ?? null,
+    [groups],
+  );
+  const regularGroups = useMemo(
+    () => groups.filter((group) => group.systemKey === null),
+    [groups],
+  );
+  const regularBoardViews = useMemo(
+    () => boardViews.filter((view) => view.systemKey !== "inbox"),
+    [boardViews],
+  );
+  const currentGroup = regularGroups[currentGroupIndex] ?? null;
   const currentBoardView = boardViews[currentBoardViewIndex] ?? null;
+  const isInboxView = currentBoardView?.systemKey === "inbox";
+  const regularBoardViewIndex = currentBoardView
+    ? regularBoardViews.findIndex((view) => view.id === currentBoardView.id)
+    : -1;
+  const inboxDragSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 4 },
+    }),
+  );
 
   const visibleTodos = useMemo(
     () => todos.filter((todo) => todo.status !== "archived"),
@@ -71,12 +119,18 @@ export function BoardPage({
   }
 
   const groupsForView = useMemo(() => {
-    if (!currentBoardView || currentBoardView.groups.length === 0) {
-      return groups;
+    if (!currentBoardView) {
+      return [];
+    }
+    if (currentBoardView.systemKey === "inbox") {
+      return inboxGroup ? [inboxGroup] : [];
+    }
+    if (currentBoardView.systemKey === "all") {
+      return regularGroups;
     }
     const allowed = new Set(currentBoardView.groups.map((group) => group.id));
-    return groups.filter((group) => allowed.has(group.id));
-  }, [currentBoardView, groups]);
+    return regularGroups.filter((group) => allowed.has(group.id));
+  }, [currentBoardView, inboxGroup, regularGroups]);
 
   const todosByGroup = useMemo(() => {
     const map = new Map<string, Todo[]>();
@@ -103,40 +157,42 @@ export function BoardPage({
     return map;
   }, [groupsForView, visibleTodos]);
 
-  const boardViewTodoCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const boardView of boardViews) {
-      if (boardView.groups.length === 0) {
-        counts.set(boardView.id, visibleTodos.length);
-        continue;
-      }
-      const allowed = new Set(boardView.groups.map((group) => group.id));
-      counts.set(
-        boardView.id,
-        visibleTodos.filter((todo) => todo.groups.some((group) => allowed.has(group.id))).length,
-      );
+  const loadTodosForView = useCallback(async (boardViewId?: string) => {
+    const requestId = todoRequestIdRef.current + 1;
+    todoRequestIdRef.current = requestId;
+    const nextTodos = await listTodos(boardViewId);
+    if (todoRequestIdRef.current === requestId) {
+      setTodos(nextTodos);
     }
-    return counts;
-  }, [boardViews, visibleTodos]);
+  }, []);
 
   const loadBoard = useCallback(async () => {
     setError(null);
-    const [nextGroups, nextBoardViews] = await Promise.all([listGroups(), listBoardViews()]);
+    const [nextGroups, nextBoardViews, savedBoardViewId, nextInboxCount] = await Promise.all([
+      listGroups(),
+      listBoardViews(),
+      getSelectedBoardViewId(),
+      countInboxTodos(),
+    ]);
     setGroups(nextGroups);
     setBoardViews(nextBoardViews);
+    setInboxCount(nextInboxCount);
 
-    const selectedView = nextBoardViews[currentBoardViewIndex] ?? nextBoardViews[0];
-    const nextTodos = await listTodos(selectedView?.id);
-    setTodos(nextTodos);
+    const selectedIndex = resolveInitialBoardViewIndex(
+      nextBoardViews,
+      savedBoardViewId,
+      nextInboxCount,
+    );
+    const selectedView = nextBoardViews[selectedIndex];
+    await loadTodosForView(selectedView?.id);
+    if (selectedView && savedBoardViewId && selectedView.id !== savedBoardViewId) {
+      await saveSelectedBoardViewId(selectedView.id);
+    }
     setLoading(false);
 
-    if (nextGroups.length > 0 && currentGroupIndex >= nextGroups.length) {
-      setCurrentGroupIndex(0);
-    }
-    if (nextBoardViews.length > 0 && currentBoardViewIndex >= nextBoardViews.length) {
-      setCurrentBoardViewIndex(0);
-    }
-  }, [currentBoardViewIndex, currentGroupIndex]);
+    setCurrentGroupIndex(0);
+    setCurrentBoardViewIndex(selectedIndex);
+  }, [loadTodosForView]);
 
   useEffect(() => {
     loadBoard().catch((nextError: unknown) => {
@@ -159,35 +215,82 @@ export function BoardPage({
     }
   }, [editingTodoId, visibleTodoIds]);
 
-  async function refreshTodosForCurrentView() {
-    const nextTodos = await listTodos(currentBoardView?.id);
-    setTodos(nextTodos);
-  }
+  const refreshTodosForCurrentView = useCallback(async () => {
+    await loadTodosForView(currentBoardView?.id);
+  }, [currentBoardView?.id, loadTodosForView]);
+
+  useEffect(() => {
+    function handleWindowBlur() {
+      windowFocusedRef.current = false;
+    }
+
+    function handleWindowFocus() {
+      if (windowFocusedRef.current) {
+        return;
+      }
+      windowFocusedRef.current = true;
+      setError(null);
+      Promise.all([
+        refreshTodosForCurrentView(),
+        countInboxTodos().then(setInboxCount),
+      ]).catch((nextError: unknown) => {
+        setError(String(nextError));
+      });
+    }
+
+    window.addEventListener("blur", handleWindowBlur);
+    window.addEventListener("focus", handleWindowFocus);
+    return () => {
+      window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [refreshTodosForCurrentView]);
 
   function nextInputGroup() {
-    if (groups.length === 0) {
+    if (regularGroups.length === 0) {
       return;
     }
-    setCurrentGroupIndex((index) => (index + 1) % groups.length);
+    setCurrentGroupIndex((index) => (index + 1) % regularGroups.length);
   }
 
   async function nextBoardView() {
-    if (boardViews.length === 0) {
+    if (regularBoardViews.length === 0) {
       return;
     }
-    const nextIndex = (currentBoardViewIndex + 1) % boardViews.length;
-    setCurrentBoardViewIndex(nextIndex);
-    const nextTodos = await listTodos(boardViews[nextIndex]?.id);
-    setTodos(nextTodos);
+    const nextRegularIndex =
+      regularBoardViewIndex === -1
+        ? Math.max(
+            0,
+            regularBoardViews.findIndex((view) => view.systemKey === "all"),
+          )
+        : (regularBoardViewIndex + 1) % regularBoardViews.length;
+    const nextView = regularBoardViews[nextRegularIndex];
+    const nextIndex = boardViews.findIndex((view) => view.id === nextView.id);
+    await selectBoardView(nextIndex, "right");
   }
 
-  async function selectBoardView(index: number) {
-    if (!boardViews[index]) {
+  async function selectBoardView(
+    index: number,
+    direction: BoardViewTransitionDirection = index > currentBoardViewIndex ? "right" : "left",
+  ) {
+    const boardView = boardViews[index];
+    if (!boardView || index === currentBoardViewIndex) {
       return;
     }
+    setError(null);
+    setBoardViewTransitionDirection(direction);
+    setBoardViewTransitionKey((key) => key + 1);
     setCurrentBoardViewIndex(index);
-    const nextTodos = await listTodos(boardViews[index]?.id);
-    setTodos(nextTodos);
+    selectTodo(null);
+    setDragState(null);
+    try {
+      await Promise.all([
+        loadTodosForView(boardView.id),
+        saveSelectedBoardViewId(boardView.id),
+      ]);
+    } catch (nextError) {
+      setError(String(nextError));
+    }
   }
 
   async function submitTodo() {
@@ -196,15 +299,28 @@ export function BoardPage({
       return;
     }
     const created = await createTodo(detail, [currentGroup.id]);
+    setLastCreatedTodoId(created.id);
     setInput("");
-    if (
-      !currentBoardView ||
-      currentBoardView.groups.length === 0 ||
-      currentBoardView.groups.some((group) => group.id === currentGroup.id)
-    ) {
-      setTodos((items) => [...items, created]);
-    } else {
-      await refreshTodosForCurrentView();
+    await refreshTodosForCurrentView();
+  }
+
+  async function handleSetBoardViewGroupMembership(groupId: string, included: boolean) {
+    if (!currentBoardView || currentBoardView.systemKey !== null) {
+      return;
+    }
+    setError(null);
+    try {
+      const updated = await setBoardViewGroupMembership(
+        currentBoardView.id,
+        groupId,
+        included,
+      );
+      setBoardViews((views) =>
+        views.map((view) => (view.id === updated.id ? updated : view)),
+      );
+      await loadTodosForView(updated.id);
+    } catch (nextError) {
+      setError(String(nextError));
     }
   }
 
@@ -277,6 +393,22 @@ export function BoardPage({
     cancelEditingTodo();
   }
 
+  async function toggleTodoChecklistLine(id: string, lineIndex: number) {
+    const todo = todos.find((item) => item.id === id);
+    if (!todo) {
+      return;
+    }
+
+    const nextDetail = toggleChecklistLineAtIndex(todo.detail, lineIndex);
+    if (nextDetail === todo.detail) {
+      return;
+    }
+
+    const updated = await updateTodoDetail(id, nextDetail);
+    setTodos((items) => items.map((item) => (item.id === id ? updated : item)));
+    selectTodo(updated.id);
+  }
+
   async function toggleSelectedTodoDone() {
     const id = selectedTodoIdRef.current;
     const todo = todos.find((item) => item.id === id);
@@ -323,6 +455,41 @@ export function BoardPage({
     } catch (nextError) {
       setTodos(previousTodos);
       setError(String(nextError));
+    }
+  }
+
+  function handleInboxDragStart(event: DragStartEvent) {
+    if (!isInboxView) {
+      return;
+    }
+    const todoId = String(event.active.id);
+    setInboxDraggedTodoId(todoId);
+    selectTodo(null);
+  }
+
+  async function handleInboxDragEnd(event: DragEndEvent) {
+    const todoId = String(event.active.id);
+    const target = event.over?.id ? String(event.over.id) : "";
+    setInboxDraggedTodoId(null);
+    if (!isInboxView || !target.startsWith("inbox-group:")) {
+      return;
+    }
+    const targetGroupId = target.slice("inbox-group:".length);
+    setError(null);
+    try {
+      await moveTodoFromInbox(todoId, targetGroupId);
+      setTodos((items) => items.filter((todo) => todo.id !== todoId));
+      setInboxCount((count) => Math.max(0, count - 1));
+      selectTodo(null);
+    } catch (nextError) {
+      setError(String(nextError));
+    }
+  }
+
+  async function openInbox() {
+    const index = boardViews.findIndex((view) => view.systemKey === "inbox");
+    if (index >= 0) {
+      await selectBoardView(index, "right");
     }
   }
 
@@ -422,7 +589,7 @@ export function BoardPage({
   useEffect(() => {
     function clearSelectionWhenFocusingOutside(event: FocusEvent) {
       const target = event.target as HTMLElement | null;
-      if (!target || target.closest("[data-todo-card]")) {
+      if (!(target instanceof HTMLElement) || target.closest("[data-todo-card]")) {
         return;
       }
       selectTodo(null);
@@ -441,80 +608,141 @@ export function BoardPage({
   }
 
   return (
+    <DndContext
+      sensors={inboxDragSensors}
+      collisionDetection={pointerWithin}
+      onDragStart={handleInboxDragStart}
+      onDragEnd={(event) => void handleInboxDragEnd(event)}
+      onDragCancel={() => setInboxDraggedTodoId(null)}
+    >
     <div className="flex h-screen overflow-hidden bg-easydo-bg text-easydo-text">
       <AppSidebar
         view="board"
         collapsed={sidebarCollapsed}
-        boardViews={boardViews}
-        boardViewTodoCounts={boardViewTodoCounts}
-        currentBoardViewIndex={currentBoardViewIndex}
-        groups={groups}
-        currentGroupIndex={currentGroupIndex}
+        currentBoardView={currentBoardView}
+        groups={regularGroups}
         showBoardControls
+        shortcutSettings={shortcutSettings}
         onNavigate={onNavigate}
         onToggleCollapsed={onToggleSidebar}
-        onSelectBoardView={(index) => void selectBoardView(index)}
         onSelectGroup={setCurrentGroupIndex}
+        onSetBoardViewGroupMembership={(groupId, included) => {
+          void handleSetBoardViewGroupMembership(groupId, included);
+        }}
+        inboxCount={inboxCount}
+        inboxActive={isInboxView}
+        inboxDropEnabled={isInboxView}
+        onOpenInbox={() => void openInbox()}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="shrink-0 border-b border-easydo-borderSoft bg-easydo-bg/80 px-5 py-4 backdrop-blur">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-normal text-easydo-cream">
-                {currentBoardView?.name ?? "所有"} / 输入到 {currentGroup?.name ?? "未配置"}
-              </h1>
-            </div>
-          </div>
+        <header className="shrink-0 border-b border-easydo-borderSoft bg-easydo-bg/80 px-3 py-1.5 backdrop-blur">
+          <BoardViewSwitcher
+            boardViews={regularBoardViews}
+            currentIndex={regularBoardViewIndex}
+            currentView={currentBoardView}
+            forceExpanded={visibleTodos.length === 0}
+            transitionDirection={boardViewTransitionDirection}
+            transitionKey={boardViewTransitionKey}
+            onSelectView={(index, direction) => {
+              const selected = regularBoardViews[index];
+              const fullIndex = boardViews.findIndex((view) => view.id === selected?.id);
+              if (fullIndex >= 0) {
+                void selectBoardView(fullIndex, direction);
+              }
+            }}
+          />
           {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
         </header>
 
-        <main className="min-h-0 flex-1 overflow-hidden px-5 py-5">
-          <div className="no-scrollbar flex h-full min-w-full gap-5 overflow-x-auto">
-            {groupsForView.map((group) => (
-              <GroupSection
-                key={group.id}
-                group={group}
-                todos={todosByGroup.get(group.id) ?? []}
-                selectedTodoId={selectedTodoId}
-                editingTodoId={editingTodoId}
-                editingDetail={editingDetail}
-                editingError={editingError}
-                onSelectTodo={selectTodo}
-                onStartEditingTodo={startEditingTodo}
-                onChangeEditingDetail={setEditingDetail}
-                onSaveEditingTodo={() => void saveEditingTodo()}
-                onBlurEditingTodo={() => void saveEditingTodo()}
-                onCancelEditingTodo={cancelEditingTodo}
-                onCompleteTodo={(id) => void handleCompleteTodo(id)}
-                onReopenTodo={(id) => void handleReopenTodo(id)}
-                onArchiveTodo={(id) => void handleArchiveTodo(id)}
-                dragState={dragState}
-                onDragStartTodo={(groupId, draggedTodoId) => {
-                  setDragState({ groupId, draggedTodoId, targetTodoId: null, position: "before" });
-                  selectTodo(null);
-                }}
-                onDragOverTodo={updateDragTarget}
-                onReorderTodo={(groupId, draggedTodoId, targetTodoId, position) => {
-                  void handleReorderTodo(groupId, draggedTodoId, targetTodoId, position);
-                }}
-                onDragEndTodo={clearDragState}
-              />
-            ))}
-          </div>
+        <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-3 py-3">
+          {isInboxView ? (
+            <div
+              data-inbox-banner
+              className="shrink-0 border border-easydo-borderSoft bg-muted/60 px-3 py-2 text-sm text-easydo-textSecondary"
+            >
+              收件箱仅暂存 Todo。请将 Todo 拖到左侧普通 Group 永久保留；未整理的 Todo 会在次日 03:00 后自动删除。
+            </div>
+          ) : null}
+          {groupsForView.length === 0 ? (
+            <div className="grid h-full place-items-center border border-dashed border-border bg-card/40 px-4 text-center text-sm text-muted-foreground">
+              当前 View 暂无 Group，可从左侧栏添加
+            </div>
+          ) : (
+            <div className="no-scrollbar flex min-h-0 flex-1 min-w-full gap-3 overflow-x-auto">
+              {groupsForView.map((group) => (
+                <GroupSection
+                  key={group.id}
+                  group={group}
+                  todos={todosByGroup.get(group.id) ?? []}
+                  scrollToTodoId={lastCreatedTodoId}
+                  selectedTodoId={selectedTodoId}
+                  editingTodoId={editingTodoId}
+                  editingDetail={editingDetail}
+                  editingError={editingError}
+                  onSelectGroup={() => {
+                    const index = regularGroups.findIndex((item) => item.id === group.id);
+                    if (index >= 0) {
+                      setCurrentGroupIndex(index);
+                    }
+                  }}
+                  onSelectTodo={selectTodo}
+                  onStartEditingTodo={startEditingTodo}
+                  onChangeEditingDetail={setEditingDetail}
+                  onSaveEditingTodo={() => void saveEditingTodo()}
+                  onBlurEditingTodo={() => void saveEditingTodo()}
+                  onCancelEditingTodo={cancelEditingTodo}
+                  onToggleTodoChecklistLine={(id, lineIndex) => void toggleTodoChecklistLine(id, lineIndex)}
+                  onCompleteTodo={(id) => void handleCompleteTodo(id)}
+                  onReopenTodo={(id) => void handleReopenTodo(id)}
+                  onArchiveTodo={(id) => void handleArchiveTodo(id)}
+                  dragState={dragState}
+                  onDragStartTodo={(groupId, draggedTodoId) => {
+                    setDragState({ groupId, draggedTodoId, targetTodoId: null, position: "before" });
+                    selectTodo(null);
+                  }}
+                  onDragOverTodo={updateDragTarget}
+                  onReorderTodo={(groupId, draggedTodoId, targetTodoId, position) => {
+                    void handleReorderTodo(groupId, draggedTodoId, targetTodoId, position);
+                  }}
+                  onDragEndTodo={clearDragState}
+                  externalDndContext={isInboxView}
+                />
+              ))}
+            </div>
+          )}
         </main>
 
         <TodoInput
           value={input}
-          currentGroupName={currentGroup?.name ?? "未配置"}
+          groups={regularGroups}
+          currentGroupId={currentGroup?.id ?? null}
           onChange={setInput}
           onSubmit={() => void submitTodo()}
+          onSelectGroup={setCurrentGroupIndex}
           onNextGroup={nextInputGroup}
           onNextBoardView={() => void nextBoardView()}
         />
       </div>
     </div>
+    </DndContext>
   );
+}
+
+function resolveInitialBoardViewIndex(
+  boardViews: BoardView[],
+  savedBoardViewId: string | null,
+  inboxCount: number,
+) {
+  if (savedBoardViewId) {
+    const savedIndex = boardViews.findIndex((view) => view.id === savedBoardViewId);
+    const savedView = boardViews[savedIndex];
+    if (savedIndex !== -1 && (savedView.systemKey !== "inbox" || inboxCount > 0)) {
+      return savedIndex;
+    }
+  }
+  const allIndex = boardViews.findIndex((view) => view.systemKey === "all");
+  return allIndex === -1 ? 0 : allIndex;
 }
 
 function getTodoGroupSortOrder(todo: Todo, groupId: string) {

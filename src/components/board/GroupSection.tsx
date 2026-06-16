@@ -8,6 +8,7 @@ import {
   type DragEndEvent,
   type DragOverEvent,
 } from "@dnd-kit/core";
+import { useEffect, useRef } from "react";
 import {
   SortableContext,
   sortableKeyboardCoordinates,
@@ -23,16 +24,19 @@ type DropPosition = "before" | "after";
 interface GroupSectionProps {
   group: Group;
   todos: Todo[];
+  scrollToTodoId: string | null;
   selectedTodoId: string | null;
   editingTodoId: string | null;
   editingDetail: string;
   editingError: string | null;
+  onSelectGroup: () => void;
   onSelectTodo: (id: string) => void;
   onStartEditingTodo: (id: string) => void;
   onChangeEditingDetail: (value: string) => void;
   onSaveEditingTodo: () => void;
   onBlurEditingTodo: () => void;
   onCancelEditingTodo: () => void;
+  onToggleTodoChecklistLine: (id: string, lineIndex: number) => void;
   onCompleteTodo: (id: string) => void;
   onReopenTodo: (id: string) => void;
   onArchiveTodo: (id: string) => void;
@@ -56,21 +60,25 @@ interface GroupSectionProps {
     position: DropPosition,
   ) => void;
   onDragEndTodo: () => void;
+  externalDndContext?: boolean;
 }
 
 export function GroupSection({
   group,
   todos,
+  scrollToTodoId,
   selectedTodoId,
   editingTodoId,
   editingDetail,
   editingError,
+  onSelectGroup,
   onSelectTodo,
   onStartEditingTodo,
   onChangeEditingDetail,
   onSaveEditingTodo,
   onBlurEditingTodo,
   onCancelEditingTodo,
+  onToggleTodoChecklistLine,
   onCompleteTodo,
   onReopenTodo,
   onArchiveTodo,
@@ -79,7 +87,10 @@ export function GroupSection({
   onDragOverTodo,
   onReorderTodo,
   onDragEndTodo,
+  externalDndContext = false,
 }: GroupSectionProps) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const lastScrolledTodoIdRef = useRef<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -92,6 +103,29 @@ export function GroupSection({
   );
 
   const todoIds = todos.map((todo) => todo.id);
+
+  useEffect(() => {
+    if (
+      !scrollToTodoId ||
+      lastScrolledTodoIdRef.current === scrollToTodoId ||
+      !todoIds.includes(scrollToTodoId)
+    ) {
+      return;
+    }
+
+    lastScrolledTodoIdRef.current = scrollToTodoId;
+    window.requestAnimationFrame(() => {
+      const list = listRef.current;
+      if (!list) {
+        return;
+      }
+      if (typeof list.scrollTo === "function") {
+        list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+      } else {
+        list.scrollTop = list.scrollHeight;
+      }
+    });
+  }, [scrollToTodoId, todoIds]);
 
   function handleDragStart(event: DragEndEvent) {
     onDragStartTodo(group.id, String(event.active.id));
@@ -116,47 +150,64 @@ export function GroupSection({
     onReorderTodo(group.id, draggedTodoId, targetTodoId, getSortPosition(draggedTodoId, targetTodoId, todoIds));
   }
 
+  const todoList = (
+    <SortableContext items={todoIds} strategy={verticalListSortingStrategy}>
+      <div
+        ref={listRef}
+        data-todo-list
+        className="no-scrollbar flex min-h-0 flex-col divide-y divide-border overflow-y-auto"
+      >
+        {todos.map((todo) => (
+          <SortableTodoCard
+            key={todo.id}
+            todo={todo}
+            selected={todo.id === selectedTodoId}
+            editing={todo.id === editingTodoId}
+            editingValue={editingDetail}
+            editingError={todo.id === editingTodoId ? editingError : null}
+            dragging={dragState?.draggedTodoId === todo.id}
+            onSelect={() => onSelectTodo(todo.id)}
+            onStartEditing={() => onStartEditingTodo(todo.id)}
+            onChangeEditingValue={onChangeEditingDetail}
+            onSaveEditing={onSaveEditingTodo}
+            onBlurEditing={onBlurEditingTodo}
+            onCancelEditing={onCancelEditingTodo}
+            onToggleChecklistLine={(lineIndex) => onToggleTodoChecklistLine(todo.id, lineIndex)}
+            onComplete={() => onCompleteTodo(todo.id)}
+            onReopen={() => onReopenTodo(todo.id)}
+            onArchive={() => onArchiveTodo(todo.id)}
+          />
+        ))}
+      </div>
+    </SortableContext>
+  );
+
   return (
-    <section className="flex min-h-0 min-w-[280px] flex-1 flex-col rounded-easydo-lg border border-easydo-borderSoft bg-easydo-bgSoft/55 p-2.5 shadow-easydo-card">
-      <div className="mb-2.5 flex items-center justify-between px-1">
-        <h2 className="text-base font-semibold text-easydo-cream">{group.name}</h2>
-        <span className="rounded-full border border-easydo-border bg-easydo-surface px-2.5 py-1 text-xs text-easydo-textMuted">
+    <section
+      data-group-section={group.id}
+      className="flex h-fit max-h-full min-w-[240px] flex-1 self-start flex-col overflow-hidden rounded-md border border-border bg-card"
+      onClick={onSelectGroup}
+    >
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-2 py-1.5">
+        <h2 className="text-sm font-semibold text-easydo-cream">{group.name}</h2>
+        <span className="border border-border bg-muted px-1.5 py-px text-xs text-muted-foreground">
           {todos.length}
         </span>
       </div>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-        onDragCancel={onDragEndTodo}
-      >
-        <SortableContext items={todoIds} strategy={verticalListSortingStrategy}>
-          <div className="no-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-            {todos.map((todo) => (
-              <SortableTodoCard
-                key={todo.id}
-                todo={todo}
-                selected={todo.id === selectedTodoId}
-                editing={todo.id === editingTodoId}
-                editingValue={editingDetail}
-                editingError={todo.id === editingTodoId ? editingError : null}
-                dragging={dragState?.draggedTodoId === todo.id}
-                onSelect={() => onSelectTodo(todo.id)}
-                onStartEditing={() => onStartEditingTodo(todo.id)}
-                onChangeEditingValue={onChangeEditingDetail}
-                onSaveEditing={onSaveEditingTodo}
-                onBlurEditing={onBlurEditingTodo}
-                onCancelEditing={onCancelEditingTodo}
-                onComplete={() => onCompleteTodo(todo.id)}
-                onReopen={() => onReopenTodo(todo.id)}
-                onArchive={() => onArchiveTodo(todo.id)}
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+      {externalDndContext ? (
+        todoList
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+          onDragCancel={onDragEndTodo}
+        >
+          {todoList}
+        </DndContext>
+      )}
     </section>
   );
 }

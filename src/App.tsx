@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import {
   getAppearanceSettings,
+  getLayoutSettings,
   getShortcutSettings,
   saveAppearanceSettings,
+  saveLayoutSettings,
   saveShortcutSettings,
 } from "./lib/api";
 import { defaultShortcutSettings, shortcutMatches } from "./lib/shortcuts";
@@ -29,6 +31,9 @@ export default function App() {
     getAppearanceSettings()
       .then(setAppearanceSettings)
       .catch(() => setAppearanceSettings(defaultAppearanceSettings));
+    getLayoutSettings()
+      .then((settings) => setSidebarCollapsed(settings.sidebarCollapsed))
+      .catch(() => setSidebarCollapsed(false));
   }, []);
 
   useEffect(() => {
@@ -71,13 +76,23 @@ export default function App() {
     setAppearanceSettings(saved);
   }
 
+  function handleToggleSidebar() {
+    setSidebarCollapsed((collapsed) => {
+      const next = !collapsed;
+      void saveLayoutSettings({ version: 1, sidebarCollapsed: next }).catch(() => {
+        setSidebarCollapsed(collapsed);
+      });
+      return next;
+    });
+  }
+
   return (
     <>
       {view === "daily" ? (
         <DailyPage
           onNavigate={setView}
           sidebarCollapsed={sidebarCollapsed}
-          onToggleSidebar={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          onToggleSidebar={handleToggleSidebar}
         />
       ) : (
         <BoardPage
@@ -85,7 +100,7 @@ export default function App() {
           shortcutSettings={shortcutSettings}
           settingsOpen={settingsOpen}
           sidebarCollapsed={sidebarCollapsed}
-          onToggleSidebar={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          onToggleSidebar={handleToggleSidebar}
         />
       )}
       <SettingsDialog

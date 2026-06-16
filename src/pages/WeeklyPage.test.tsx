@@ -58,6 +58,29 @@ describe("DailyPage", () => {
     expect(screen.getByText("已归档任务")).toBeInTheDocument();
   });
 
+  it("refreshes daily todos when the window regains focus", async () => {
+    const range = getCurrentWeekRange();
+    let dailyTodos = [
+      makeTodo("todo-1", "已有 Daily", "active", dateInRange(range.start, 1), null),
+    ];
+    vi.mocked(listDailyTodos).mockImplementation(async () => dailyTodos);
+
+    render(<DailyPage onNavigate={vi.fn()} />);
+
+    await screen.findByText("已有 Daily");
+    vi.mocked(listDailyTodos).mockClear();
+    dailyTodos = [
+      ...dailyTodos,
+      makeTodo("todo-cli", "CLI 新增 Daily", "active", dateInRange(range.start, 2), null),
+    ];
+
+    fireEvent.blur(window);
+    fireEvent.focus(window);
+
+    await waitFor(() => expect(listDailyTodos).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("CLI 新增 Daily")).toBeInTheDocument();
+  });
+
   it("switches to another week with the week controls", async () => {
     const nextWeekCreatedAt = dateInRange(addWeeks(getCurrentWeekRange(), 1).start, 1);
     vi.mocked(listDailyTodos).mockResolvedValue([
@@ -92,6 +115,9 @@ function makeTodo(
     updatedAt: completedAt ?? createdAt,
     completedAt,
     archivedAt,
+    expiresAt: null,
+    deletedAt: null,
+    deleteReason: null,
     groupSortOrders: [],
   };
 }

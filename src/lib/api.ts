@@ -1,5 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppearanceSettings, BoardView, Group, ShortcutSettings, Todo } from "../types";
+import type {
+  AppearanceSettings,
+  BoardView,
+  CliInstallStatus,
+  Group,
+  LayoutSettings,
+  ShortcutSettings,
+  SkillDefinition,
+  SkillInstallLocationStatus,
+  Todo,
+} from "../types";
 
 export function listGroups(): Promise<Group[]> {
   return invoke("list_groups");
@@ -13,6 +23,22 @@ export function listBoardViews(): Promise<BoardView[]> {
   return invoke("list_board_views");
 }
 
+export function getSelectedBoardViewId(): Promise<string | null> {
+  return invoke("get_selected_board_view_id");
+}
+
+export function saveSelectedBoardViewId(boardViewId: string): Promise<string> {
+  return invoke("save_selected_board_view_id", { boardViewId });
+}
+
+export function setBoardViewGroupMembership(
+  boardViewId: string,
+  groupId: string,
+  included: boolean,
+): Promise<BoardView> {
+  return invoke("set_board_view_group_membership", { boardViewId, groupId, included });
+}
+
 export function listTodos(boardViewId?: string): Promise<Todo[]> {
   return invoke("list_todos", { boardViewId: boardViewId ?? null });
 }
@@ -23,6 +49,18 @@ export function listDailyTodos(): Promise<Todo[]> {
 
 export function createTodo(detail: string, groupIds: string[]): Promise<Todo> {
   return invoke("create_todo", { detail, groupIds, tagIds: [] });
+}
+
+export function createInboxTodo(detail: string): Promise<Todo> {
+  return invoke("create_inbox_todo", { detail });
+}
+
+export function countInboxTodos(): Promise<number> {
+  return invoke("count_inbox_todos");
+}
+
+export function moveTodoFromInbox(id: string, targetGroupId: string): Promise<Todo> {
+  return invoke("move_todo_from_inbox", { id, targetGroupId });
 }
 
 export function completeTodo(id: string): Promise<Todo> {
@@ -67,4 +105,47 @@ export function getAppearanceSettings(): Promise<AppearanceSettings> {
 
 export function saveAppearanceSettings(settings: AppearanceSettings): Promise<AppearanceSettings> {
   return invoke("save_appearance_settings", { settings });
+}
+
+export function getLayoutSettings(): Promise<LayoutSettings> {
+  return invoke("get_layout_settings");
+}
+
+export function saveLayoutSettings(settings: LayoutSettings): Promise<LayoutSettings> {
+  return invoke("save_layout_settings", { settings });
+}
+
+export function getCliInstallStatus(): Promise<CliInstallStatus> {
+  return invoke("get_cli_install_status");
+}
+
+export function installCliTool(): Promise<CliInstallStatus> {
+  return invoke("install_cli_tool");
+}
+
+export function listAvailableSkills(): Promise<SkillDefinition[]> {
+  return invoke("list_available_skills");
+}
+
+export function getSkillInstallStatuses(
+  skillName: string,
+  customRoots: string[],
+): Promise<SkillInstallLocationStatus[]> {
+  return invoke("get_skill_install_statuses", { skillName, customRoots });
+}
+
+export function installSkillToTarget(
+  skillName: string,
+  target: string,
+  customRoot?: string,
+): Promise<SkillInstallLocationStatus> {
+  return invoke("install_skill_to_target", {
+    skillName,
+    target,
+    customRoot: customRoot ?? null,
+  });
+}
+
+export function chooseSkillInstallDirectory(): Promise<string | null> {
+  return invoke("choose_skill_install_directory");
 }

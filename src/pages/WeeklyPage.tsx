@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { listDailyTodos } from "../lib/api";
@@ -28,22 +28,51 @@ export function DailyPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const dayTrackRef = useRef<HTMLDivElement>(null);
+  const windowFocusedRef = useRef(true);
 
   const weekRange = useMemo(() => addWeeks(getCurrentWeekRange(), weekOffset), [weekOffset]);
   const dayGroups = useMemo(() => groupTodosByDailyDate(todos, weekRange), [todos, weekRange]);
 
-  useEffect(() => {
-    setLoading(true);
-    listDailyTodos()
-      .then((items) => {
-        setTodos(items);
+  const loadDailyTodos = useCallback(async (showLoading = false) => {
+    if (showLoading) {
+      setLoading(true);
+    }
+    setError(null);
+    try {
+      setTodos(await listDailyTodos());
+    } catch (nextError: unknown) {
+      setError(String(nextError));
+    } finally {
+      if (showLoading) {
         setLoading(false);
-      })
-      .catch((nextError: unknown) => {
-        setError(String(nextError));
-        setLoading(false);
-      });
+      }
+    }
   }, []);
+
+  useEffect(() => {
+    void loadDailyTodos(true);
+  }, [loadDailyTodos]);
+
+  useEffect(() => {
+    function handleWindowBlur() {
+      windowFocusedRef.current = false;
+    }
+
+    function handleWindowFocus() {
+      if (windowFocusedRef.current) {
+        return;
+      }
+      windowFocusedRef.current = true;
+      void loadDailyTodos();
+    }
+
+    window.addEventListener("blur", handleWindowBlur);
+    window.addEventListener("focus", handleWindowFocus);
+    return () => {
+      window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [loadDailyTodos]);
 
   useEffect(() => {
     if (dayTrackRef.current) {
@@ -96,7 +125,7 @@ export function DailyPage({
         <main className="min-h-0 flex-1 overflow-hidden px-5 py-5">
           {loading ? <p className="text-sm text-easydo-textMuted">Loading daily view</p> : null}
           {!loading && dayGroups.every(([, items]) => items.length === 0) ? (
-            <div className="rounded-easydo-lg border border-easydo-border bg-easydo-surface px-4 py-10 text-center text-sm text-easydo-textMuted shadow-easydo-card">
+            <div className="border border-easydo-border bg-easydo-surface px-4 py-10 text-center text-sm text-easydo-textMuted shadow-easydo-card">
               这周暂无事项
             </div>
           ) : null}
@@ -107,13 +136,13 @@ export function DailyPage({
             {dayGroups.map(([date, items]) => (
               <section
                 key={date}
-                className="flex max-h-[calc(100vh-11rem)] w-[360px] shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-card"
+                className="flex max-h-[calc(100vh-11rem)] w-[360px] shrink-0 flex-col overflow-hidden border border-border bg-card"
               >
-                <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-3">
+                <div className="flex shrink-0 items-center justify-between border-b border-border px-2 py-1.5">
                   <h2 className="text-sm font-semibold text-card-foreground">
                     {formatDateHeading(date)}
                   </h2>
-                  <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                  <span className="border border-border bg-muted px-1.5 py-px text-xs text-muted-foreground">
                     {items.length}
                   </span>
                 </div>
@@ -121,7 +150,7 @@ export function DailyPage({
                   {items.map((todo) => (
                     <li
                       key={todo.id}
-                      className="px-3 py-2.5 text-sm leading-6 text-foreground"
+                      className="px-2 py-1.5 text-sm leading-5 text-foreground"
                     >
                       <div className="flex items-start gap-2">
                         <span
