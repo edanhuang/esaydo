@@ -38,6 +38,7 @@ fn help_version_and_parse_errors_are_concise() {
         .stdout(predicate::str::contains("查询 Todo"))
         .stdout(predicate::str::contains("收件箱"))
         .stdout(predicate::str::contains("迁移"))
+        .stdout(predicate::str::contains("标记 Todo"))
         .stdout(predicate::str::contains("管理 EasyDo Agent Skills"));
     cli()
         .args(["list", "--help"])
@@ -189,6 +190,30 @@ fn todo_crud_and_json_output_share_one_database() {
 }
 
 #[test]
+fn mark_todo_priority_updates_json_and_plain_list_marks() {
+    let (_root, path) = database();
+    let created = run_json(&path, &["add", "高优 CLI", "--group", "工作", "--json"]);
+    let id = created["id"].as_str().expect("todo id");
+    assert_eq!(created["priority"], "normal");
+
+    let marked = run_json(&path, &["mark", &id[..8], "--priority", "high", "--json"]);
+    assert_eq!(marked["priority"], "high");
+
+    cli()
+        .arg("--database")
+        .arg(&path)
+        .args(["list", "--group", "工作"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("MARKS"))
+        .stdout(predicate::str::contains("high"))
+        .stdout(predicate::str::contains("高优 CLI"));
+
+    let cleared = run_json(&path, &["mark", &id[..8], "--priority", "normal", "--json"]);
+    assert_eq!(cleared["priority"], "normal");
+}
+
+#[test]
 fn view_group_status_and_time_filters_compose() {
     let (_root, path) = database();
     let work = run_json(&path, &["add", "工作任务", "--group", "工作", "--json"]);
@@ -260,6 +285,29 @@ fn business_errors_have_stable_exit_codes_and_reasons() {
         .assert()
         .code(2)
         .stderr("开始日期不能晚于结束日期\n");
+    cli()
+        .arg("--database")
+        .arg(&path)
+        .args(["mark", "missing"])
+        .assert()
+        .code(3)
+        .stderr("未找到 Todo\n");
+    let todo = run_json(&path, &["add", "待标记", "--group", "工作", "--json"]);
+    let todo_id = todo["id"].as_str().expect("todo id");
+    cli()
+        .arg("--database")
+        .arg(&path)
+        .args(["mark", &todo_id[..8]])
+        .assert()
+        .code(2)
+        .stderr("至少需要指定一个标记参数，如 --priority high\n");
+    cli()
+        .arg("--database")
+        .arg(&path)
+        .args(["mark", &todo_id[..8], "--priority", "urgent"])
+        .assert()
+        .code(2)
+        .stderr("无效 Todo 优先级: urgent\n");
 
     let conn = Connection::open(&path).expect("open database");
     let work_group: String = conn

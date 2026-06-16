@@ -1,4 +1,5 @@
 export type TodoStatus = "active" | "done" | "archived";
+export type TodoPriority = "normal" | "high";
 
 export interface Group {
   id: string;
@@ -21,6 +22,7 @@ export interface Todo {
   id: string;
   detail: string;
   status: TodoStatus;
+  priority: TodoPriority;
   extraText: string | null;
   createdAt: string;
   updatedAt: string;

@@ -1,11 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, type CSSProperties } from "react";
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 import { Archive, Check, GripVertical } from "lucide-react";
+import highPriorityIcon from "@/assets/high-level.png";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { parseChecklistLine, toggleChecklistLineAtIndex } from "@/lib/checklist";
 import { cn } from "@/lib/utils";
-import type { Todo } from "../../types";
+import type { Todo, TodoPriority } from "../../types";
 
 interface TodoCardProps {
   todo: Todo;
@@ -29,6 +37,7 @@ interface TodoCardProps {
   onComplete: () => void;
   onReopen: () => void;
   onArchive: () => void;
+  onSetPriority: (priority: TodoPriority) => void;
 }
 
 export function TodoCard({
@@ -53,8 +62,10 @@ export function TodoCard({
   onComplete,
   onReopen,
   onArchive,
+  onSetPriority,
 }: TodoCardProps) {
   const done = todo.status === "done";
+  const highPriority = todo.priority === "high";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isComposingRef = useRef(false);
   const selectionAfterToggleRef = useRef<{ start: number; end: number } | null>(null);
@@ -175,121 +186,149 @@ export function TodoCard({
   }
 
   return (
-    <article
-      ref={onSortableNode}
-      style={sortableStyle}
-      data-todo-card
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
-      onDoubleClick={(event) => {
-        event.stopPropagation();
-        onStartEditing();
-      }}
-      className={cn(
-        "group relative flex w-full items-center gap-2.5 py-1.5 pl-px pr-2 text-left transition-colors duration-150 ease-out",
-        selected
-          ? "bg-easydo-surfaceActive"
-          : "bg-transparent hover:bg-easydo-surfaceHover",
-        done && "text-easydo-textMuted opacity-60",
-        dragging && "opacity-35",
-      )}
-    >
-      <button
-        ref={onDragHandleNode}
-        type="button"
-        title="拖拽排序"
-        className="grid size-4 shrink-0 cursor-grab place-items-center text-easydo-textMuted opacity-0 transition hover:bg-easydo-surfaceActive hover:text-easydo-cream active:cursor-grabbing group-hover:opacity-100 group-focus-within:opacity-100"
-        onClick={(event) => event.stopPropagation()}
-        {...dragHandleAttributes}
-        {...dragHandleListeners}
-      >
-        <GripVertical className="size-4" />
-        <span className="sr-only">拖拽排序</span>
-      </button>
-
-      <button
-        type="button"
-        title={done ? "取消完成" : "完成"}
-        className={cn(
-          "grid size-5 shrink-0 place-items-center rounded-full border transition hover:border-easydo-gold hover:bg-easydo-gold/15",
-          done
-            ? "border-easydo-gold bg-easydo-gold text-primary-foreground shadow-easydo-glow"
-            : selected
-              ? "border-easydo-gold bg-easydo-gold/15"
-              : "border-easydo-border bg-easydo-bgSoft",
-        )}
-        onClick={(event) => {
-          event.stopPropagation();
-          if (done) {
-            onReopen();
-          } else {
-            onComplete();
-          }
-        }}
-      >
-        {done ? <Check className="size-3.5" /> : null}
-        <span className="sr-only">{done ? "取消完成" : "完成"}</span>
-      </button>
-
-      {editing ? (
-        <div
-          className="min-w-0 flex-1"
-          onClick={(event) => {
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <article
+          ref={onSortableNode}
+          style={sortableStyle}
+          data-todo-card
+          data-priority={todo.priority}
+          role="button"
+          tabIndex={0}
+          onClick={onSelect}
+          onContextMenu={onSelect}
+          onDoubleClick={(event) => {
             event.stopPropagation();
+            onStartEditing();
           }}
+          className={cn(
+            "group relative flex w-full items-center gap-2.5 py-1.5 pl-px pr-2 text-left transition-colors duration-150 ease-out",
+            selected
+              ? "bg-easydo-surfaceActive"
+              : "bg-transparent hover:bg-easydo-surfaceHover",
+            done && "text-easydo-textMuted opacity-60",
+            dragging && "opacity-35",
+          )}
         >
-          <Textarea
-            ref={textareaRef}
-            value={editingValue}
-            onChange={(event) => onChangeEditingValue(event.target.value)}
-            onKeyDown={handleEditKeyDown}
-            onCompositionStart={() => {
-              isComposingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              isComposingRef.current = false;
-              window.requestAnimationFrame(() => {
-                resizeEditingTextarea();
-                keepEditingCardVisible();
-              });
-            }}
-            onBlur={onBlurEditing}
-            aria-invalid={Boolean(editingError)}
-            rows={1}
-            className="min-h-11 resize-none overflow-hidden rounded-none border-easydo-gold/50 bg-easydo-bgSoft text-easydo-cream shadow-easydo-glow"
-          />
-          {editingError ? (
-            <p role="alert" className="mt-1 text-xs text-destructive">
-              {editingError}
-            </p>
+          {highPriority ? (
+            <span
+              title="高优"
+              className="pointer-events-none absolute left-0.5 top-0.5 block size-3.5"
+            >
+              <img src={highPriorityIcon} alt="" aria-hidden className="size-full" />
+              <span className="sr-only">高优</span>
+            </span>
           ) : null}
-        </div>
-      ) : (
-        <TodoDetailLines
-          detail={todo.detail}
-          done={done}
-          onToggleChecklistLine={onToggleChecklistLine}
-        />
-      )}
 
-      <span className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          title="归档"
-          className="text-easydo-textMuted hover:bg-easydo-surfaceActive hover:text-easydo-danger"
-          onClick={(event) => {
-            event.stopPropagation();
-            onArchive();
-          }}
-        >
-          <Archive data-icon="inline-start" />
-          <span className="sr-only">归档</span>
-        </Button>
-      </span>
-    </article>
+          <button
+            ref={onDragHandleNode}
+            type="button"
+            title="拖拽排序"
+            className="grid size-4 shrink-0 cursor-grab place-items-center text-easydo-textMuted opacity-0 transition hover:bg-easydo-surfaceActive hover:text-easydo-cream active:cursor-grabbing group-hover:opacity-100 group-focus-within:opacity-100"
+            onClick={(event) => event.stopPropagation()}
+            {...dragHandleAttributes}
+            {...dragHandleListeners}
+          >
+            <GripVertical className="size-4" />
+            <span className="sr-only">拖拽排序</span>
+          </button>
+
+          <button
+            type="button"
+            title={done ? "取消完成" : "完成"}
+            className={cn(
+              "grid size-5 shrink-0 place-items-center rounded-full border transition hover:border-easydo-gold hover:bg-easydo-gold/15",
+              done
+                ? "border-easydo-gold bg-easydo-gold text-primary-foreground shadow-easydo-glow"
+                : selected
+                  ? "border-easydo-gold bg-easydo-gold/15"
+                  : "border-easydo-border bg-easydo-bgSoft",
+            )}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (done) {
+                onReopen();
+              } else {
+                onComplete();
+              }
+            }}
+          >
+            {done ? <Check className="size-3.5" /> : null}
+            <span className="sr-only">{done ? "取消完成" : "完成"}</span>
+          </button>
+
+          {editing ? (
+            <div
+              className="min-w-0 flex-1"
+              onClick={(event) => {
+                event.stopPropagation();
+              }}
+            >
+              <Textarea
+                ref={textareaRef}
+                value={editingValue}
+                onChange={(event) => onChangeEditingValue(event.target.value)}
+                onKeyDown={handleEditKeyDown}
+                onCompositionStart={() => {
+                  isComposingRef.current = true;
+                }}
+                onCompositionEnd={() => {
+                  isComposingRef.current = false;
+                  window.requestAnimationFrame(() => {
+                    resizeEditingTextarea();
+                    keepEditingCardVisible();
+                  });
+                }}
+                onBlur={onBlurEditing}
+                aria-invalid={Boolean(editingError)}
+                rows={1}
+                className="min-h-11 resize-none overflow-hidden rounded-none border-easydo-gold/50 bg-easydo-bgSoft text-easydo-cream shadow-easydo-glow"
+              />
+              {editingError ? (
+                <p role="alert" className="mt-1 text-xs text-destructive">
+                  {editingError}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <TodoDetailLines
+              detail={todo.detail}
+              done={done}
+              onToggleChecklistLine={onToggleChecklistLine}
+            />
+          )}
+
+          <span className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              title="归档"
+              className="text-easydo-textMuted hover:bg-easydo-surfaceActive hover:text-easydo-danger"
+              onClick={(event) => {
+                event.stopPropagation();
+                onArchive();
+              }}
+            >
+              <Archive data-icon="inline-start" />
+              <span className="sr-only">归档</span>
+            </Button>
+          </span>
+        </article>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuGroup>
+          <ContextMenuItem
+            onSelect={() => {
+              onSetPriority(highPriority ? "normal" : "high");
+            }}
+          >
+            <img src={highPriorityIcon} alt="" aria-hidden className="size-4" />
+            {highPriority ? "取消高优" : "标记高优"}
+          </ContextMenuItem>
+        </ContextMenuGroup>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

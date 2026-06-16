@@ -79,6 +79,17 @@ pub fn update_todo_detail(
 }
 
 #[tauri::command]
+pub fn set_todo_priority(
+    state: State<'_, AppState>,
+    id: String,
+    priority: String,
+) -> CommandResult<TodoWithRelations> {
+    let mut conn = lock_conn(&state)?;
+    let priority = todo_service::parse_todo_priority(&priority).map_err(to_string)?;
+    todo_service::set_todo_priority(&mut conn, &id, priority).map_err(to_string)
+}
+
+#[tauri::command]
 pub fn reorder_todos_in_group(
     state: State<'_, AppState>,
     group_id: String,

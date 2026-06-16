@@ -70,6 +70,7 @@ pub fn run() {
             commands::save_selected_board_view_id,
             commands::save_shortcut_settings,
             commands::set_board_view_group_membership,
+            commands::set_todo_priority,
             commands::update_todo_detail,
         ])
         .run(tauri::generate_context!())

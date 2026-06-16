@@ -28,6 +28,8 @@ easydo list --status all --json
 ```bash
 easydo add "任务内容" --group 工作 --json
 easydo update <todo-id-or-unique-prefix> --detail "新内容" --json
+easydo mark <todo-id-or-unique-prefix> --priority high --json
+easydo mark <todo-id-or-unique-prefix> --priority normal --json
 easydo done <todo-id-or-unique-prefix> --json
 easydo archive <todo-id-or-unique-prefix> --json
 easydo inbox add "暂存内容" --json

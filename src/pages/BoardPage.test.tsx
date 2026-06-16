@@ -17,6 +17,7 @@ import {
   reorderTodosInGroup,
   saveSelectedBoardViewId,
   setBoardViewGroupMembership,
+  setTodoPriority,
   updateTodoDetail,
 } from "../lib/api";
 import type { BoardView, Group, Todo } from "../types";
@@ -36,6 +37,7 @@ vi.mock("../lib/api", () => ({
   reorderTodosInGroup: vi.fn(),
   saveSelectedBoardViewId: vi.fn(),
   setBoardViewGroupMembership: vi.fn(),
+  setTodoPriority: vi.fn(),
   updateTodoDetail: vi.fn(),
 }));
 
@@ -127,6 +129,14 @@ describe("BoardPage", () => {
         };
       },
     );
+    vi.mocked(setTodoPriority).mockImplementation(async (id, priority) => {
+      const updated = {
+        ...todos.find((todo) => todo.id === id)!,
+        priority,
+      };
+      todos = todos.map((todo) => (todo.id === id ? updated : todo));
+      return updated;
+    });
     vi.mocked(archiveTodo).mockImplementation(async (id) => {
       const updated = {
         ...todos.find((todo) => todo.id === id)!,
@@ -379,6 +389,27 @@ describe("BoardPage", () => {
     vi.mocked(completeTodo).mockClear();
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     await waitFor(() => expect(reopenTodo).toHaveBeenCalledWith("todo-1"));
+  });
+
+  it("toggles high priority from the todo context menu", async () => {
+    const user = userEvent.setup();
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await screen.findByText("已有任务");
+    const card = getTodoCardByText("已有任务");
+    fireEvent.contextMenu(card);
+    await user.click(await screen.findByRole("menuitem", { name: "标记高优" }));
+
+    await waitFor(() => expect(setTodoPriority).toHaveBeenCalledWith("todo-1", "high"));
+    expect(getTodoCardByText("已有任务")).toHaveAttribute("data-priority", "high");
+    expect(screen.getByTitle("高优")).toBeInTheDocument();
+
+    fireEvent.contextMenu(getTodoCardByText("已有任务"));
+    await user.click(await screen.findByRole("menuitem", { name: "取消高优" }));
+
+    await waitFor(() => expect(setTodoPriority).toHaveBeenLastCalledWith("todo-1", "normal"));
+    expect(getTodoCardByText("已有任务")).toHaveAttribute("data-priority", "normal");
+    expect(screen.queryByTitle("高优")).not.toBeInTheDocument();
   });
 
   it("edits the selected todo inline with Space and Enter", async () => {
@@ -652,6 +683,7 @@ function makeTodo(
     id,
     detail,
     status,
+    priority: "normal",
     extraText: null,
     groups: todoGroups,
     tags: [],

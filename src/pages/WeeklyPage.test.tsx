@@ -108,6 +108,7 @@ function makeTodo(
     id,
     detail,
     status,
+    priority: "normal",
     extraText: null,
     groups: [],
     tags: [],

@@ -55,6 +55,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
           id TEXT PRIMARY KEY,
           detail TEXT NOT NULL,
           status TEXT NOT NULL DEFAULT 'active',
+          priority TEXT NOT NULL DEFAULT 'normal',
           extra_text TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
@@ -143,6 +144,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     ensure_column(conn, "todos", "expires_at", "TEXT")?;
     ensure_column(conn, "todos", "deleted_at", "TEXT")?;
     ensure_column(conn, "todos", "delete_reason", "TEXT")?;
+    ensure_column(conn, "todos", "priority", "TEXT NOT NULL DEFAULT 'normal'")?;
     ensure_column(conn, "groups", "system_key", "TEXT")?;
     ensure_column(conn, "board_views", "system_key", "TEXT")?;
     ensure_todo_group_sort_order(conn)?;
@@ -156,6 +158,8 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         ON todos(expires_at);
         CREATE INDEX IF NOT EXISTS idx_todos_deleted_at
         ON todos(deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_todos_priority
+        ON todos(priority);
         "#,
     )?;
     Ok(())

@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Group, Todo } from "../../types";
+import type { Group, Todo, TodoPriority } from "../../types";
 import { TodoCard } from "./TodoCard";
 
 type DropPosition = "before" | "after";
@@ -40,6 +40,7 @@ interface GroupSectionProps {
   onCompleteTodo: (id: string) => void;
   onReopenTodo: (id: string) => void;
   onArchiveTodo: (id: string) => void;
+  onSetTodoPriority: (id: string, priority: TodoPriority) => void;
   dragState: {
     groupId: string;
     draggedTodoId: string;
@@ -82,6 +83,7 @@ export function GroupSection({
   onCompleteTodo,
   onReopenTodo,
   onArchiveTodo,
+  onSetTodoPriority,
   dragState,
   onDragStartTodo,
   onDragOverTodo,
@@ -176,6 +178,7 @@ export function GroupSection({
             onComplete={() => onCompleteTodo(todo.id)}
             onReopen={() => onReopenTodo(todo.id)}
             onArchive={() => onArchiveTodo(todo.id)}
+            onSetPriority={(priority) => onSetTodoPriority(todo.id, priority)}
           />
         ))}
       </div>

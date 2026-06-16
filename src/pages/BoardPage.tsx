@@ -23,6 +23,7 @@ import {
   reorderTodosInGroup,
   saveSelectedBoardViewId,
   setBoardViewGroupMembership,
+  setTodoPriority,
   updateTodoDetail,
 } from "../lib/api";
 import {
@@ -31,7 +32,7 @@ import {
   shortcutMatches,
 } from "../lib/shortcuts";
 import { toggleChecklistLineAtIndex } from "../lib/checklist";
-import type { AppView, BoardView, Group, ShortcutSettings, Todo } from "../types";
+import type { AppView, BoardView, Group, ShortcutSettings, Todo, TodoPriority } from "../types";
 import { GroupSection } from "../components/board/GroupSection";
 import {
   BoardViewSwitcher,
@@ -345,6 +346,21 @@ export function BoardPage({
   async function handleArchiveTodo(id: string) {
     const updated = await archiveTodo(id);
     setTodos((items) => items.map((item) => (item.id === id ? updated : item)));
+  }
+
+  async function handleSetTodoPriority(id: string, priority: TodoPriority) {
+    const todo = todos.find((item) => item.id === id);
+    if (!todo || todo.priority === priority) {
+      return;
+    }
+    setError(null);
+    try {
+      const updated = await setTodoPriority(id, priority);
+      setTodos((items) => items.map((item) => (item.id === id ? updated : item)));
+      selectTodo(updated.id);
+    } catch (nextError) {
+      setError(String(nextError));
+    }
   }
 
   function startEditingTodo(id: string) {
@@ -696,6 +712,7 @@ export function BoardPage({
                   onCompleteTodo={(id) => void handleCompleteTodo(id)}
                   onReopenTodo={(id) => void handleReopenTodo(id)}
                   onArchiveTodo={(id) => void handleArchiveTodo(id)}
+                  onSetTodoPriority={(id, priority) => void handleSetTodoPriority(id, priority)}
                   dragState={dragState}
                   onDragStartTodo={(groupId, draggedTodoId) => {
                     setDragState({ groupId, draggedTodoId, targetTodoId: null, position: "before" });

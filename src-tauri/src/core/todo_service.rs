@@ -25,6 +25,21 @@ impl TodoStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TodoPriority {
+    Normal,
+    High,
+}
+
+impl TodoPriority {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::High => "high",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimeField {
     Activity,
@@ -333,6 +348,30 @@ pub fn update_todo_detail(
     get_todo_with_relations(conn, id)
 }
 
+pub fn set_todo_priority(
+    conn: &mut Connection,
+    id: &str,
+    priority: TodoPriority,
+) -> Result<TodoWithRelations> {
+    let todo = get_todo(conn, id)?;
+    if todo.status == "archived" {
+        return Err(EasyDoError::invalid_state("已归档 Todo 不能修改优先级"));
+    }
+    if todo.priority == priority.as_str() {
+        return get_todo_with_relations(conn, id);
+    }
+
+    let tx = conn.transaction()?;
+    let now = now_iso();
+    tx.execute(
+        "UPDATE todos SET priority = ?1, updated_at = ?2 WHERE id = ?3",
+        params![priority.as_str(), now, id],
+    )?;
+    insert_event(&tx, id, "priority_updated", priority.as_str(), &now)?;
+    tx.commit()?;
+    get_todo_with_relations(conn, id)
+}
+
 pub fn complete_todo(conn: &mut Connection, id: &str) -> Result<TodoWithRelations> {
     let todo = get_todo(conn, id)?;
     match todo.status.as_str() {
@@ -541,6 +580,7 @@ pub fn get_todo_with_relations(conn: &Connection, id: &str) -> Result<TodoWithRe
         id: todo.id.clone(),
         detail: todo.detail,
         status: todo.status,
+        priority: todo.priority,
         extra_text: todo.extra_text,
         created_at: todo.created_at,
         updated_at: todo.updated_at,
@@ -558,7 +598,7 @@ pub fn get_todo_with_relations(conn: &Connection, id: &str) -> Result<TodoWithRe
 fn get_todo(conn: &Connection, id: &str) -> Result<Todo> {
     conn.query_row(
         r#"
-        SELECT id, detail, status, extra_text, created_at, updated_at, completed_at, archived_at,
+        SELECT id, detail, status, priority, extra_text, created_at, updated_at, completed_at, archived_at,
                expires_at, deleted_at, delete_reason
         FROM todos
         WHERE id = ?1 AND deleted_at IS NULL
@@ -569,14 +609,15 @@ fn get_todo(conn: &Connection, id: &str) -> Result<Todo> {
                 id: row.get(0)?,
                 detail: row.get(1)?,
                 status: row.get(2)?,
-                extra_text: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-                completed_at: row.get(6)?,
-                archived_at: row.get(7)?,
-                expires_at: row.get(8)?,
-                deleted_at: row.get(9)?,
-                delete_reason: row.get(10)?,
+                priority: row.get(3)?,
+                extra_text: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                completed_at: row.get(7)?,
+                archived_at: row.get(8)?,
+                expires_at: row.get(9)?,
+                deleted_at: row.get(10)?,
+                delete_reason: row.get(11)?,
             })
         },
     )
@@ -673,6 +714,16 @@ fn parse_stored_status(status: &str) -> Result<TodoStatus> {
         "archived" => Ok(TodoStatus::Archived),
         _ => Err(EasyDoError::system(format!(
             "数据库中存在未知 Todo 状态: {status}"
+        ))),
+    }
+}
+
+pub fn parse_todo_priority(priority: &str) -> Result<TodoPriority> {
+    match priority {
+        "normal" => Ok(TodoPriority::Normal),
+        "high" => Ok(TodoPriority::High),
+        _ => Err(EasyDoError::invalid(format!(
+            "无效 Todo 优先级: {priority}"
         ))),
     }
 }

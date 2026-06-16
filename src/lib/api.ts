@@ -9,6 +9,7 @@ import type {
   SkillDefinition,
   SkillInstallLocationStatus,
   Todo,
+  TodoPriority,
 } from "../types";
 
 export function listGroups(): Promise<Group[]> {
@@ -81,6 +82,10 @@ export function deleteTodo(id: string): Promise<void> {
 
 export function updateTodoDetail(id: string, detail: string): Promise<Todo> {
   return invoke("update_todo_detail", { id, detail });
+}
+
+export function setTodoPriority(id: string, priority: TodoPriority): Promise<Todo> {
+  return invoke("set_todo_priority", { id, priority });
 }
 
 export function reorderTodosInGroup(groupId: string, todoIds: string[]): Promise<void> {

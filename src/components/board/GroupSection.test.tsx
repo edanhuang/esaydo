@@ -39,6 +39,7 @@ describe("GroupSection", () => {
         onCompleteTodo={vi.fn()}
         onReopenTodo={vi.fn()}
         onArchiveTodo={vi.fn()}
+        onSetTodoPriority={vi.fn()}
         dragState={null}
         onDragStartTodo={vi.fn()}
         onDragOverTodo={vi.fn()}
@@ -95,6 +96,7 @@ describe("GroupSection", () => {
         onCompleteTodo={vi.fn()}
         onReopenTodo={vi.fn()}
         onArchiveTodo={vi.fn()}
+        onSetTodoPriority={vi.fn()}
         dragState={null}
         onDragStartTodo={vi.fn()}
         onDragOverTodo={vi.fn()}
@@ -114,6 +116,7 @@ function makeTodo(id: string, detail: string, sortOrder: number): Todo {
     id,
     detail,
     status: "active",
+    priority: "normal",
     extraText: null,
     groups: [group],
     tags: [],

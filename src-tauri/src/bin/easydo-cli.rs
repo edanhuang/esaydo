@@ -12,7 +12,7 @@ use easydo_lib::core::models::TodoWithRelations;
 use easydo_lib::core::selectors::{resolve_group, resolve_todo_id, resolve_view};
 use easydo_lib::core::skills::{install_skills, AgentTarget, SkillCatalog, SkillInstallResult};
 use easydo_lib::core::todo_service::{
-    self, CreateTodoInput, TimeField, TimeRange, TodoFilter, TodoStatus,
+    self, CreateTodoInput, TimeField, TimeRange, TodoFilter, TodoPriority, TodoStatus,
 };
 
 #[derive(Debug, Parser)]
@@ -47,6 +47,8 @@ enum Commands {
     Move(MoveArgs),
     /// 修改 Todo 内容
     Update(UpdateArgs),
+    /// 标记 Todo 属性
+    Mark(MarkArgs),
     /// 完成 Todo
     Done(TodoActionArgs),
     /// 归档 Todo
@@ -114,6 +116,18 @@ struct UpdateArgs {
     selector: String,
     #[arg(long)]
     detail: String,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Debug, Args)]
+#[command(
+    after_help = "示例:\n  easydo mark <todo-id> --priority high --json\n  easydo mark <todo-id> --priority normal"
+)]
+struct MarkArgs {
+    selector: String,
+    #[arg(long)]
+    priority: Option<String>,
     #[arg(long)]
     json: bool,
 }
@@ -243,6 +257,22 @@ fn run(cli: Cli) -> Result<()> {
                     let todo = todo_service::update_todo_detail(&mut conn, &id, &args.detail)?;
                     print_todo(&todo, args.json)
                 }
+                Commands::Mark(args) => {
+                    let id = resolve_todo_id(&conn, &args.selector)?;
+                    let priority = args
+                        .priority
+                        .as_deref()
+                        .map(parse_todo_priority)
+                        .transpose()?;
+                    if let Some(priority) = priority {
+                        let todo = todo_service::set_todo_priority(&mut conn, &id, priority)?;
+                        print_todo(&todo, args.json)
+                    } else {
+                        Err(EasyDoError::invalid(
+                            "至少需要指定一个标记参数，如 --priority high",
+                        ))
+                    }
+                }
                 Commands::Done(args) => {
                     let id = resolve_todo_id(&conn, &args.selector)?;
                     let todo = todo_service::complete_todo(&mut conn, &id)?;
@@ -355,6 +385,10 @@ fn parse_statuses(value: &str) -> Result<HashSet<TodoStatus>> {
     }
 }
 
+fn parse_todo_priority(value: &str) -> Result<TodoPriority> {
+    todo_service::parse_todo_priority(value)
+}
+
 fn parse_time_field(value: &str) -> Result<TimeField> {
     match value {
         "activity" => Ok(TimeField::Activity),
@@ -446,7 +480,7 @@ fn print_todo_list(todos: &[TodoWithRelations]) {
         println!("没有匹配的 Todo");
         return;
     }
-    println!("ID       STATUS    GROUPS               DETAIL");
+    println!("ID       STATUS    MARKS      GROUPS               DETAIL");
     for todo in todos {
         println!("{}", todo_line(todo));
     }
@@ -470,7 +504,19 @@ fn todo_line(todo: &TodoWithRelations) -> String {
             .join(" / "),
         100,
     );
-    format!("{id:<8} {:<9} {groups:<20} {detail}", todo.status)
+    format!(
+        "{id:<8} {:<9} {:<10} {groups:<20} {detail}",
+        todo.status,
+        todo_marks(todo)
+    )
+}
+
+fn todo_marks(todo: &TodoWithRelations) -> String {
+    let mut marks = Vec::new();
+    if todo.priority == "high" {
+        marks.push("high");
+    }
+    marks.join(",")
 }
 
 fn truncate(value: &str, max_chars: usize) -> String {
@@ -540,6 +586,7 @@ mod tests {
             id: "12345678-rest".to_string(),
             detail: "第一行\n第二行".to_string(),
             status: "active".to_string(),
+            priority: "normal".to_string(),
             extra_text: None,
             created_at: String::new(),
             updated_at: String::new(),

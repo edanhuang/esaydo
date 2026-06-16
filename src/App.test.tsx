@@ -29,6 +29,7 @@ import {
   saveSelectedBoardViewId,
   saveShortcutSettings,
   setBoardViewGroupMembership,
+  setTodoPriority,
   updateTodoDetail,
 } from "./lib/api";
 import type { BoardView, Group, Todo } from "./types";
@@ -60,6 +61,7 @@ vi.mock("./lib/api", () => ({
   saveSelectedBoardViewId: vi.fn(),
   saveShortcutSettings: vi.fn(),
   setBoardViewGroupMembership: vi.fn(),
+  setTodoPriority: vi.fn(),
   updateTodoDetail: vi.fn(),
 }));
 
@@ -93,6 +95,7 @@ describe("App settings shortcuts", () => {
     vi.mocked(saveSelectedBoardViewId).mockImplementation(async (id) => id);
     vi.mocked(saveShortcutSettings).mockResolvedValue(defaultShortcutSettings);
     vi.mocked(setBoardViewGroupMembership).mockRejectedValue(new Error("not used"));
+    vi.mocked(setTodoPriority).mockRejectedValue(new Error("not used"));
     vi.mocked(listGroups).mockResolvedValue(groups);
     vi.mocked(listBoardViews).mockResolvedValue(boardViews);
     vi.mocked(listTodos).mockResolvedValue(todos);
@@ -185,6 +188,7 @@ function makeTodo(id: string, detail: string, status: Todo["status"], todoGroups
     id,
     detail,
     status,
+    priority: "normal",
     extraText: null,
     groups: todoGroups,
     tags: [],
