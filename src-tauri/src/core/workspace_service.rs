@@ -67,17 +67,19 @@ pub fn list_board_views(conn: &Connection) -> Result<Vec<BoardViewWithGroups>> {
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
     rows.into_iter()
-        .map(|(id, name, sort_order, system_key, created_at, updated_at)| {
-            Ok(BoardViewWithGroups {
-                groups: list_groups_for_board_view(conn, &id)?,
-                id,
-                name,
-                sort_order,
-                system_key,
-                created_at,
-                updated_at,
-            })
-        })
+        .map(
+            |(id, name, sort_order, system_key, created_at, updated_at)| {
+                Ok(BoardViewWithGroups {
+                    groups: list_groups_for_board_view(conn, &id)?,
+                    id,
+                    name,
+                    sort_order,
+                    system_key,
+                    created_at,
+                    updated_at,
+                })
+            },
+        )
         .collect()
 }
 
@@ -126,9 +128,7 @@ pub fn set_board_view_group_membership(
     }
     let group = get_group(conn, group_id)?;
     if group.system_key.is_some() {
-        return Err(EasyDoError::invalid_state(
-            "系统 Group 不能加入普通 View",
-        ));
+        return Err(EasyDoError::invalid_state("系统 Group 不能加入普通 View"));
     }
 
     let tx = conn.transaction()?;
@@ -254,10 +254,7 @@ pub fn get_system_group(conn: &Connection, system_key: &str) -> Result<Group> {
     .ok_or_else(|| EasyDoError::not_found(format!("未找到系统 Group: {system_key}")))
 }
 
-pub fn get_system_board_view(
-    conn: &Connection,
-    system_key: &str,
-) -> Result<BoardViewWithGroups> {
+pub fn get_system_board_view(conn: &Connection, system_key: &str) -> Result<BoardViewWithGroups> {
     let id = conn
         .query_row(
             "SELECT id FROM board_views WHERE system_key = ?1",

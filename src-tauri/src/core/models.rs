@@ -60,6 +60,14 @@ pub struct TodoWithRelations {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct DailyTodoWithRelations {
+    #[serde(flatten)]
+    pub todo: TodoWithRelations,
+    pub daily_activity_dates: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct TodoGroupSortOrder {
     pub group_id: String,
     pub sort_order: i64,

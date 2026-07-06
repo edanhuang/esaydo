@@ -75,10 +75,7 @@ fn inbox_todo_is_hidden_by_default_and_can_move_to_regular_group() {
     let inbox_list = run_json(&path, &["list", "--view", "收件箱", "--json"]);
     assert_eq!(inbox_list.as_array().expect("inbox list").len(), 1);
 
-    let moved = run_json(
-        &path,
-        &["move", &id[..8], "--group", "工作", "--json"],
-    );
+    let moved = run_json(&path, &["move", &id[..8], "--group", "工作", "--json"]);
     assert_eq!(moved["groups"][0]["name"], "工作");
     assert!(moved["expiresAt"].is_null());
     let work_list = run_json(&path, &["list", "--group", "工作", "--json"]);

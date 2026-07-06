@@ -31,6 +31,7 @@ export interface Todo {
   expiresAt: string | null;
   deletedAt: string | null;
   deleteReason: string | null;
+  dailyActivityDates?: string[];
   groups: Group[];
   groupSortOrders: Array<{
     groupId: string;

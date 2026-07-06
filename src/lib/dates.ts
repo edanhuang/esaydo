@@ -47,21 +47,42 @@ export function groupTodosByDailyDate(todos: Todo[], range: WeekRange): Array<[s
   }
 
   for (const todo of todos) {
-    const dateLike = getDailyDate(todo);
-    const date = new Date(dateLike);
-    if (date < range.start || date > range.end) {
-      continue;
+    const seenKeys = new Set<string>();
+    for (const dateLike of getDailyDates(todo)) {
+      const date = new Date(dateLike);
+      if (date < range.start || date > range.end) {
+        continue;
+      }
+      const key = toDateKey(date);
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+      groups.get(key)?.push(todo);
     }
-    const key = toDateKey(date);
-    groups.get(key)?.push(todo);
   }
 
   return [...groups.entries()].map(([date, items]) => [
     date,
     items.sort((left, right) => {
-      return new Date(getDailyDate(left)).getTime() - new Date(getDailyDate(right)).getTime();
+      return getDailyTimeForDate(left, date) - getDailyTimeForDate(right, date);
     }),
   ]);
+}
+
+function getDailyDates(todo: Todo): string[] {
+  if (todo.dailyActivityDates && todo.dailyActivityDates.length > 0) {
+    return todo.dailyActivityDates;
+  }
+  return [getDailyDate(todo)];
+}
+
+function getDailyTimeForDate(todo: Todo, dateKey: string): number {
+  const times = getDailyDates(todo)
+    .filter((dateLike) => toDateKey(new Date(dateLike)) === dateKey)
+    .map((dateLike) => new Date(dateLike).getTime())
+    .filter((time) => !Number.isNaN(time));
+  return times.length > 0 ? Math.min(...times) : 0;
 }
 
 function getDailyDate(todo: Todo): string {

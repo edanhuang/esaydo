@@ -5,7 +5,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use super::db::{new_id, now_iso};
 use super::error::{EasyDoError, Result};
-use super::models::{Group, Tag, Todo, TodoGroupSortOrder, TodoWithRelations};
+use super::models::{
+    DailyTodoWithRelations, Group, Tag, Todo, TodoGroupSortOrder, TodoWithRelations,
+};
 use super::workspace_service::{get_board_view, get_group, get_system_group};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -289,7 +291,7 @@ pub fn list_board_todos(
     list_todos(conn, &filter)
 }
 
-pub fn list_daily_todos(conn: &Connection) -> Result<Vec<TodoWithRelations>> {
+pub fn list_daily_todos(conn: &Connection) -> Result<Vec<DailyTodoWithRelations>> {
     let filter = TodoFilter {
         statuses: HashSet::from([TodoStatus::Active, TodoStatus::Done, TodoStatus::Archived]),
         ..TodoFilter::default()
@@ -300,7 +302,16 @@ pub fn list_daily_todos(conn: &Connection) -> Result<Vec<TodoWithRelations>> {
             .cmp(activity_time(right))
             .then(left.created_at.cmp(&right.created_at))
     });
-    Ok(todos)
+    todos
+        .into_iter()
+        .map(|todo| {
+            let daily_activity_dates = list_daily_activity_dates(conn, &todo)?;
+            Ok(DailyTodoWithRelations {
+                todo,
+                daily_activity_dates,
+            })
+        })
+        .collect()
 }
 
 pub fn list_weekly_done(
@@ -525,14 +536,15 @@ pub fn purge_expired_inbox_todos(
               AND todos.expires_at IS NOT NULL
             "#,
         )?;
-        let rows = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         rows
     };
 
@@ -748,6 +760,25 @@ fn activity_time(todo: &TodoWithRelations) -> &str {
     }
 }
 
+fn list_daily_activity_dates(conn: &Connection, todo: &TodoWithRelations) -> Result<Vec<String>> {
+    let mut dates = vec![activity_time(todo).to_string(), todo.updated_at.clone()];
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT created_at
+        FROM todo_events
+        WHERE todo_id = ?1 AND event_type = 'updated'
+        ORDER BY created_at ASC
+        "#,
+    )?;
+    let updated_dates = stmt
+        .query_map(params![todo.id], |row| row.get::<_, String>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    dates.extend(updated_dates);
+    dates.sort();
+    dates.dedup();
+    Ok(dates)
+}
+
 fn time_in_range(value: &str, range: &TimeRange) -> Result<bool> {
     let value = DateTime::<FixedOffset>::parse_from_rfc3339(value)
         .map_err(|_| EasyDoError::system(format!("数据库时间格式无效: {value}")))?;
@@ -774,7 +805,7 @@ mod tests {
     use rusqlite::params;
 
     use super::*;
-    use crate::core::db::{open_database, test_database};
+    use crate::core::db::{new_id, open_database, test_database};
     use crate::core::workspace_service::list_groups;
 
     fn create_work_todo(conn: &mut Connection, detail: &str) -> TodoWithRelations {
@@ -827,6 +858,78 @@ mod tests {
                 .expect_err("archived todo should fail")
                 .message,
             "已归档 Todo 不能直接完成"
+        );
+    }
+
+    #[test]
+    fn todo_priority_can_be_set_to_high_and_back() {
+        let mut conn = test_database();
+        let todo = create_work_todo(&mut conn, "高优测试");
+        assert_eq!(todo.priority, "normal");
+
+        let high =
+            set_todo_priority(&mut conn, &todo.id, TodoPriority::High).expect("set high priority");
+        assert_eq!(high.priority, "high");
+
+        let normal = set_todo_priority(&mut conn, &todo.id, TodoPriority::Normal)
+            .expect("clear high priority");
+        assert_eq!(normal.priority, "normal");
+
+        let events: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM todo_events WHERE todo_id = ?1 AND event_type = 'priority_updated'",
+                params![todo.id],
+                |row| row.get(0),
+            )
+            .expect("count events");
+        assert_eq!(events, 2);
+    }
+
+    #[test]
+    fn invalid_todo_priority_is_rejected() {
+        assert_eq!(
+            parse_todo_priority("urgent")
+                .expect_err("invalid priority should fail")
+                .message,
+            "无效 Todo 优先级: urgent"
+        );
+    }
+
+    #[test]
+    fn daily_todos_include_update_activity_dates() {
+        let mut conn = test_database();
+        let todo = create_work_todo(&mut conn, "更新活动");
+        let created_at = "2026-06-01T10:00:00.000+08:00";
+        let first_updated_at = "2026-06-03T12:00:00.000+08:00";
+        let current_updated_at = "2026-06-05T14:00:00.000+08:00";
+        conn.execute(
+            "UPDATE todos SET created_at = ?1, updated_at = ?2 WHERE id = ?3",
+            params![created_at, current_updated_at, todo.id],
+        )
+        .expect("set todo dates");
+        conn.execute(
+            r#"
+            INSERT INTO todo_events (id, todo_id, event_type, content, created_at)
+            VALUES (?1, ?2, 'updated', '更新活动', ?3)
+            "#,
+            params![new_id(), todo.id, first_updated_at],
+        )
+        .expect("insert updated event");
+
+        let daily = list_daily_todos(&conn).expect("list daily todos");
+        let actual = daily
+            .into_iter()
+            .find(|item| item.todo.id == todo.id)
+            .expect("daily todo")
+            .daily_activity_dates;
+
+        assert_eq!(
+            actual,
+            vec![
+                created_at.to_string(),
+                first_updated_at.to_string(),
+                current_updated_at.to_string()
+            ]
         );
     }
 
@@ -900,10 +1003,7 @@ mod tests {
         let todo = create_inbox_todo_at(&mut conn, "已过期", created).expect("create inbox");
         let now = Utc::now().fixed_offset();
 
-        assert_eq!(
-            purge_expired_inbox_todos(&mut conn, now).expect("purge"),
-            1
-        );
+        assert_eq!(purge_expired_inbox_todos(&mut conn, now).expect("purge"), 1);
         assert_eq!(
             purge_expired_inbox_todos(&mut conn, now).expect("purge again"),
             0
@@ -978,8 +1078,7 @@ mod tests {
             1
         );
         assert_eq!(
-            purge_expired_inbox_todos(&mut writer, Utc::now().fixed_offset())
-                .expect("repeat scan"),
+            purge_expired_inbox_todos(&mut writer, Utc::now().fixed_offset()).expect("repeat scan"),
             0
         );
         let events: i64 = writer

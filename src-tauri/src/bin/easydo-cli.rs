@@ -248,8 +248,7 @@ fn run(cli: Cli) -> Result<()> {
                 Commands::Move(args) => {
                     let id = resolve_todo_id(&conn, &args.selector)?;
                     let group = resolve_group(&conn, &args.group)?;
-                    let todo =
-                        todo_service::move_todo_from_inbox(&mut conn, &id, &group.id)?;
+                    let todo = todo_service::move_todo_from_inbox(&mut conn, &id, &group.id)?;
                     print_todo(&todo, args.json)
                 }
                 Commands::Update(args) => {

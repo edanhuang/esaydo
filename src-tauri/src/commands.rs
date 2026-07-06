@@ -7,8 +7,8 @@ use tauri::State;
 use crate::core::cli_install::{bundled_cli_path, inspect_cli_install, install_cli, CLI_LINK_PATH};
 use crate::core::db::now_iso;
 use crate::core::models::{
-    AppearanceSettings, BoardViewWithGroups, CliInstallStatus, Group, LayoutSettings,
-    ShortcutBinding, ShortcutSettings, TodoWithRelations,
+    AppearanceSettings, BoardViewWithGroups, CliInstallStatus, DailyTodoWithRelations, Group,
+    LayoutSettings, ShortcutBinding, ShortcutSettings, TodoWithRelations,
 };
 use crate::core::skills::{
     custom_location_statuses, default_location_statuses, install_skill_to_custom_root,
@@ -63,7 +63,7 @@ pub fn list_todos(
 }
 
 #[tauri::command]
-pub fn list_daily_todos(state: State<'_, AppState>) -> CommandResult<Vec<TodoWithRelations>> {
+pub fn list_daily_todos(state: State<'_, AppState>) -> CommandResult<Vec<DailyTodoWithRelations>> {
     let conn = lock_conn(&state)?;
     todo_service::list_daily_todos(&conn).map_err(to_string)
 }

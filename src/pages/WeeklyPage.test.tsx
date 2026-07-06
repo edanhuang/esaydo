@@ -58,6 +58,42 @@ describe("DailyPage", () => {
     expect(screen.getByText("已归档任务")).toBeInTheDocument();
   });
 
+  it("renders todos on days when they were updated", async () => {
+    const range = getCurrentWeekRange();
+    const createdAt = dateInRange(addWeeks(range, -1).start, 1);
+    const updatedAt = dateInRange(range.start, 2);
+    vi.mocked(listDailyTodos).mockResolvedValue([
+      makeTodo("todo-1", "上周创建本周更新", "active", createdAt, null, null, updatedAt, [
+        createdAt,
+        updatedAt,
+      ]),
+    ]);
+
+    render(<DailyPage onNavigate={vi.fn()} />);
+
+    expect(await screen.findByText(formatShortDate(updatedAt))).toBeInTheDocument();
+    expect(screen.getByText("上周创建本周更新")).toBeInTheDocument();
+  });
+
+  it("renders the same todo on each daily activity date once", async () => {
+    const range = getCurrentWeekRange();
+    const createdAt = dateInRange(range.start, 1);
+    const updatedAt = dateInRange(range.start, 3);
+    vi.mocked(listDailyTodos).mockResolvedValue([
+      makeTodo("todo-1", "跨天活动", "active", createdAt, null, null, updatedAt, [
+        createdAt,
+        updatedAt,
+        updatedAt,
+      ]),
+    ]);
+
+    render(<DailyPage onNavigate={vi.fn()} />);
+
+    expect(await screen.findByText(formatShortDate(createdAt))).toBeInTheDocument();
+    expect(screen.getByText(formatShortDate(updatedAt))).toBeInTheDocument();
+    expect(screen.getAllByText("跨天活动")).toHaveLength(2);
+  });
+
   it("refreshes daily todos when the window regains focus", async () => {
     const range = getCurrentWeekRange();
     let dailyTodos = [
@@ -103,6 +139,8 @@ function makeTodo(
   createdAt: string,
   completedAt: string | null,
   archivedAt: string | null = null,
+  updatedAt: string = completedAt ?? archivedAt ?? createdAt,
+  dailyActivityDates?: string[],
 ): Todo {
   return {
     id,
@@ -113,9 +151,10 @@ function makeTodo(
     groups: [],
     tags: [],
     createdAt,
-    updatedAt: completedAt ?? createdAt,
+    updatedAt,
     completedAt,
     archivedAt,
+    dailyActivityDates,
     expiresAt: null,
     deletedAt: null,
     deleteReason: null,

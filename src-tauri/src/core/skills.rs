@@ -498,8 +498,8 @@ mod tests {
         install_skills(&old, "easydo", &[AgentTarget::Codex], home.path())
             .expect("install old version");
 
-        let before = default_location_statuses(&embedded, "easydo", home.path())
-            .expect("inspect outdated");
+        let before =
+            default_location_statuses(&embedded, "easydo", home.path()).expect("inspect outdated");
         let codex = before
             .into_iter()
             .find(|status| status.target == "codex")
@@ -512,9 +512,8 @@ mod tests {
             .expect("upgrade");
 
         assert_eq!(result[0].status, "updated");
-        let installed =
-            fs::read_to_string(home.path().join(".codex/skills/easydo/SKILL.md"))
-                .expect("read installed skill");
+        let installed = fs::read_to_string(home.path().join(".codex/skills/easydo/SKILL.md"))
+            .expect("read installed skill");
         assert!(installed.contains("独立 Agent"));
         assert!(installed.contains("use subagents"));
         assert!(installed.contains("single-agent fallback"));
