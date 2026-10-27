@@ -16,6 +16,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { Group, Todo, TodoPriority } from "../../types";
 import { TodoCard } from "./TodoCard";
 
@@ -41,6 +43,9 @@ interface GroupSectionProps {
   onReopenTodo: (id: string) => void;
   onArchiveTodo: (id: string) => void;
   onSetTodoPriority: (id: string, priority: TodoPriority) => void;
+  onSetTodoSuspended: (id: string, suspended: boolean) => void;
+  suspendedExpanded: boolean;
+  onToggleSuspendedExpanded: () => void;
   dragState: {
     groupId: string;
     draggedTodoId: string;
@@ -84,6 +89,9 @@ export function GroupSection({
   onReopenTodo,
   onArchiveTodo,
   onSetTodoPriority,
+  onSetTodoSuspended,
+  suspendedExpanded,
+  onToggleSuspendedExpanded,
   dragState,
   onDragStartTodo,
   onDragOverTodo,
@@ -104,7 +112,9 @@ export function GroupSection({
     }),
   );
 
-  const todoIds = todos.map((todo) => todo.id);
+  const activeTodos = todos.filter((todo) => todo.suspendedAt === null);
+  const suspendedTodos = todos.filter((todo) => todo.suspendedAt !== null);
+  const todoIds = activeTodos.map((todo) => todo.id);
 
   useEffect(() => {
     if (
@@ -152,37 +162,74 @@ export function GroupSection({
     onReorderTodo(group.id, draggedTodoId, targetTodoId, getSortPosition(draggedTodoId, targetTodoId, todoIds));
   }
 
+  function todoCardProps(todo: Todo) {
+    return {
+      todo,
+      selected: todo.id === selectedTodoId,
+      editing: todo.id === editingTodoId,
+      editingValue: editingDetail,
+      editingError: todo.id === editingTodoId ? editingError : null,
+      dragging: dragState?.draggedTodoId === todo.id,
+      onSelect: () => onSelectTodo(todo.id),
+      onStartEditing: () => onStartEditingTodo(todo.id),
+      onChangeEditingValue: onChangeEditingDetail,
+      onSaveEditing: onSaveEditingTodo,
+      onBlurEditing: onBlurEditingTodo,
+      onCancelEditing: onCancelEditingTodo,
+      onToggleChecklistLine: (lineIndex: number) => onToggleTodoChecklistLine(todo.id, lineIndex),
+      onComplete: () => onCompleteTodo(todo.id),
+      onReopen: () => onReopenTodo(todo.id),
+      onArchive: () => onArchiveTodo(todo.id),
+      onSetPriority: (priority: TodoPriority) => onSetTodoPriority(todo.id, priority),
+      onSetSuspended: (suspended: boolean) => onSetTodoSuspended(todo.id, suspended),
+    };
+  }
+
   const todoList = (
-    <SortableContext items={todoIds} strategy={verticalListSortingStrategy}>
-      <div
-        ref={listRef}
-        data-todo-list
-        className="no-scrollbar flex min-h-0 flex-col divide-y divide-border overflow-y-auto"
-      >
-        {todos.map((todo) => (
-          <SortableTodoCard
-            key={todo.id}
-            todo={todo}
-            selected={todo.id === selectedTodoId}
-            editing={todo.id === editingTodoId}
-            editingValue={editingDetail}
-            editingError={todo.id === editingTodoId ? editingError : null}
-            dragging={dragState?.draggedTodoId === todo.id}
-            onSelect={() => onSelectTodo(todo.id)}
-            onStartEditing={() => onStartEditingTodo(todo.id)}
-            onChangeEditingValue={onChangeEditingDetail}
-            onSaveEditing={onSaveEditingTodo}
-            onBlurEditing={onBlurEditingTodo}
-            onCancelEditing={onCancelEditingTodo}
-            onToggleChecklistLine={(lineIndex) => onToggleTodoChecklistLine(todo.id, lineIndex)}
-            onComplete={() => onCompleteTodo(todo.id)}
-            onReopen={() => onReopenTodo(todo.id)}
-            onArchive={() => onArchiveTodo(todo.id)}
-            onSetPriority={(priority) => onSetTodoPriority(todo.id, priority)}
-          />
-        ))}
-      </div>
-    </SortableContext>
+    <div
+      ref={listRef}
+      data-todo-list
+      className="no-scrollbar flex min-h-0 flex-col divide-y divide-border overflow-y-auto"
+    >
+      {suspendedTodos.length > 0 ? (
+        <div data-suspended-todos>
+          <button
+            type="button"
+            aria-expanded={suspendedExpanded}
+            className="flex w-full items-center gap-1 px-2 py-1 text-left text-xs text-easydo-textMuted transition-colors hover:bg-easydo-surfaceHover hover:text-easydo-textSecondary"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleSuspendedExpanded();
+            }}
+          >
+            <ChevronRight
+              className={cn("size-3.5 transition-transform", suspendedExpanded && "rotate-90")}
+            />
+            已挂起 {suspendedTodos.length}
+          </button>
+          {suspendedExpanded ? (
+            <div className="flex flex-col divide-y divide-border border-t border-border opacity-70">
+              {suspendedTodos.map((todo) => (
+                <TodoCard
+                  key={todo.id}
+                  {...todoCardProps(todo)}
+                  onSortableNode={() => undefined}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <SortableContext items={todoIds} strategy={verticalListSortingStrategy}>
+        {activeTodos.length > 0 ? (
+          <div className="flex flex-col divide-y divide-border">
+            {activeTodos.map((todo) => (
+              <SortableTodoCard key={todo.id} {...todoCardProps(todo)} />
+            ))}
+          </div>
+        ) : null}
+      </SortableContext>
+    </div>
   );
 
   return (
@@ -194,7 +241,7 @@ export function GroupSection({
       <div className="flex shrink-0 items-center justify-between border-b border-border px-2 py-1.5">
         <h2 className="text-sm font-semibold text-easydo-cream">{group.name}</h2>
         <span className="border border-border bg-muted px-1.5 py-px text-xs text-muted-foreground">
-          {todos.length}
+          {activeTodos.length}
         </span>
       </div>
       {externalDndContext ? (

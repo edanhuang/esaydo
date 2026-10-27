@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, type CSSProperties } from "react";
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
-import { Archive, Check, GripVertical } from "lucide-react";
+import { Archive, Check, CirclePause, CirclePlay, GripVertical } from "lucide-react";
 import highPriorityIcon from "@/assets/high-level.png";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,8 +24,9 @@ interface TodoCardProps {
   dragging: boolean;
   sortableStyle?: CSSProperties;
   onSortableNode: (node: HTMLElement | null) => void;
-  onDragHandleNode: (node: HTMLElement | null) => void;
-  dragHandleAttributes: DraggableAttributes;
+  onDragHandleNode?: (node: HTMLElement | null) => void;
+  /** 不传时卡片不可拖拽排序（如挂起区中的 Todo） */
+  dragHandleAttributes?: DraggableAttributes;
   dragHandleListeners?: DraggableSyntheticListeners;
   onSelect: () => void;
   onStartEditing: () => void;
@@ -38,6 +39,7 @@ interface TodoCardProps {
   onReopen: () => void;
   onArchive: () => void;
   onSetPriority: (priority: TodoPriority) => void;
+  onSetSuspended: (suspended: boolean) => void;
 }
 
 export function TodoCard({
@@ -63,9 +65,11 @@ export function TodoCard({
   onReopen,
   onArchive,
   onSetPriority,
+  onSetSuspended,
 }: TodoCardProps) {
   const done = todo.status === "done";
   const highPriority = todo.priority === "high";
+  const suspended = todo.suspendedAt !== null;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isComposingRef = useRef(false);
   const selectionAfterToggleRef = useRef<{ start: number; end: number } | null>(null);
@@ -193,6 +197,7 @@ export function TodoCard({
           style={sortableStyle}
           data-todo-card
           data-priority={todo.priority}
+          data-suspended={suspended || undefined}
           role="button"
           tabIndex={0}
           onClick={onSelect}
@@ -220,18 +225,22 @@ export function TodoCard({
             </span>
           ) : null}
 
-          <button
-            ref={onDragHandleNode}
-            type="button"
-            title="拖拽排序"
-            className="grid size-4 shrink-0 cursor-grab place-items-center text-easydo-textMuted opacity-0 transition hover:bg-easydo-surfaceActive hover:text-easydo-cream active:cursor-grabbing group-hover:opacity-100 group-focus-within:opacity-100"
-            onClick={(event) => event.stopPropagation()}
-            {...dragHandleAttributes}
-            {...dragHandleListeners}
-          >
-            <GripVertical className="size-4" />
-            <span className="sr-only">拖拽排序</span>
-          </button>
+          {dragHandleAttributes ? (
+            <button
+              ref={onDragHandleNode}
+              type="button"
+              title="拖拽排序"
+              className="grid size-4 shrink-0 cursor-grab place-items-center text-easydo-textMuted opacity-0 transition hover:bg-easydo-surfaceActive hover:text-easydo-cream active:cursor-grabbing group-hover:opacity-100 group-focus-within:opacity-100"
+              onClick={(event) => event.stopPropagation()}
+              {...dragHandleAttributes}
+              {...dragHandleListeners}
+            >
+              <GripVertical className="size-4" />
+              <span className="sr-only">拖拽排序</span>
+            </button>
+          ) : (
+            <span aria-hidden className="size-4 shrink-0" />
+          )}
 
           <button
             type="button"
@@ -325,6 +334,14 @@ export function TodoCard({
           >
             <img src={highPriorityIcon} alt="" aria-hidden className="size-4" />
             {highPriority ? "取消高优" : "标记高优"}
+          </ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() => {
+              onSetSuspended(!suspended);
+            }}
+          >
+            {suspended ? <CirclePlay /> : <CirclePause />}
+            {suspended ? "取消挂起" : "挂起"}
           </ContextMenuItem>
         </ContextMenuGroup>
       </ContextMenuContent>

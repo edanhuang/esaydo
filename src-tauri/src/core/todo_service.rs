@@ -383,6 +383,34 @@ pub fn set_todo_priority(
     get_todo_with_relations(conn, id)
 }
 
+/// 挂起只记录 suspended_at，不改动 todo_groups.sort_order，取消挂起后自然回到原排序位置。
+/// 挂起不是工作内容变更，因此不刷新 updated_at，避免出现在当天的 Daily 中。
+pub fn set_todo_suspended(
+    conn: &mut Connection,
+    id: &str,
+    suspended: bool,
+) -> Result<TodoWithRelations> {
+    let todo = get_todo(conn, id)?;
+    if todo.status == "archived" {
+        return Err(EasyDoError::invalid_state("已归档 Todo 不能修改挂起状态"));
+    }
+    if todo.suspended_at.is_some() == suspended {
+        return get_todo_with_relations(conn, id);
+    }
+
+    let tx = conn.transaction()?;
+    let now = now_iso();
+    let suspended_at = suspended.then(|| now.clone());
+    tx.execute(
+        "UPDATE todos SET suspended_at = ?1 WHERE id = ?2",
+        params![suspended_at, id],
+    )?;
+    let event_type = if suspended { "suspended" } else { "resumed" };
+    insert_event(&tx, id, event_type, "", &now)?;
+    tx.commit()?;
+    get_todo_with_relations(conn, id)
+}
+
 pub fn complete_todo(conn: &mut Connection, id: &str) -> Result<TodoWithRelations> {
     let todo = get_todo(conn, id)?;
     match todo.status.as_str() {
@@ -593,6 +621,7 @@ pub fn get_todo_with_relations(conn: &Connection, id: &str) -> Result<TodoWithRe
         detail: todo.detail,
         status: todo.status,
         priority: todo.priority,
+        suspended_at: todo.suspended_at,
         extra_text: todo.extra_text,
         created_at: todo.created_at,
         updated_at: todo.updated_at,
@@ -610,8 +639,8 @@ pub fn get_todo_with_relations(conn: &Connection, id: &str) -> Result<TodoWithRe
 fn get_todo(conn: &Connection, id: &str) -> Result<Todo> {
     conn.query_row(
         r#"
-        SELECT id, detail, status, priority, extra_text, created_at, updated_at, completed_at, archived_at,
-               expires_at, deleted_at, delete_reason
+        SELECT id, detail, status, priority, suspended_at, extra_text, created_at, updated_at,
+               completed_at, archived_at, expires_at, deleted_at, delete_reason
         FROM todos
         WHERE id = ?1 AND deleted_at IS NULL
         "#,
@@ -622,14 +651,15 @@ fn get_todo(conn: &Connection, id: &str) -> Result<Todo> {
                 detail: row.get(1)?,
                 status: row.get(2)?,
                 priority: row.get(3)?,
-                extra_text: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-                completed_at: row.get(7)?,
-                archived_at: row.get(8)?,
-                expires_at: row.get(9)?,
-                deleted_at: row.get(10)?,
-                delete_reason: row.get(11)?,
+                suspended_at: row.get(4)?,
+                extra_text: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+                completed_at: row.get(8)?,
+                archived_at: row.get(9)?,
+                expires_at: row.get(10)?,
+                deleted_at: row.get(11)?,
+                delete_reason: row.get(12)?,
             })
         },
     )
@@ -883,6 +913,59 @@ mod tests {
             )
             .expect("count events");
         assert_eq!(events, 2);
+    }
+
+    #[test]
+    fn todo_suspension_keeps_group_sort_order_and_updated_at() {
+        let mut conn = test_database();
+        let first = create_work_todo(&mut conn, "第一条");
+        let second = create_work_todo(&mut conn, "第二条");
+        let third = create_work_todo(&mut conn, "第三条");
+        assert_eq!(second.suspended_at, None);
+
+        let suspended =
+            set_todo_suspended(&mut conn, &second.id, true).expect("suspend todo");
+        assert!(suspended.suspended_at.is_some());
+        assert_eq!(suspended.updated_at, second.updated_at);
+        assert_eq!(suspended.group_sort_orders, second.group_sort_orders);
+
+        let again = set_todo_suspended(&mut conn, &second.id, true).expect("suspend again");
+        assert_eq!(again.suspended_at, suspended.suspended_at);
+
+        let resumed = set_todo_suspended(&mut conn, &second.id, false).expect("resume todo");
+        assert_eq!(resumed.suspended_at, None);
+        assert_eq!(resumed.group_sort_orders, second.group_sort_orders);
+
+        let ids = list_todos(&conn, &TodoFilter::default())
+            .expect("list todos")
+            .into_iter()
+            .map(|todo| todo.id)
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec![first.id, second.id.clone(), third.id]);
+
+        let events: Vec<String> = conn
+            .prepare(
+                "SELECT event_type FROM todo_events WHERE todo_id = ?1 AND event_type IN ('suspended', 'resumed') ORDER BY created_at ASC, rowid ASC",
+            )
+            .expect("prepare events")
+            .query_map(params![second.id], |row| row.get(0))
+            .expect("query events")
+            .collect::<std::result::Result<_, _>>()
+            .expect("collect events");
+        assert_eq!(events, vec!["suspended", "resumed"]);
+    }
+
+    #[test]
+    fn archived_todo_cannot_change_suspension() {
+        let mut conn = test_database();
+        let todo = create_work_todo(&mut conn, "归档后挂起");
+        archive_todo(&mut conn, &todo.id).expect("archive");
+        assert_eq!(
+            set_todo_suspended(&mut conn, &todo.id, true)
+                .expect_err("archived todo cannot be suspended")
+                .message,
+            "已归档 Todo 不能修改挂起状态"
+        );
     }
 
     #[test]

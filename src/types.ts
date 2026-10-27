@@ -23,6 +23,7 @@ export interface Todo {
   detail: string;
   status: TodoStatus;
   priority: TodoPriority;
+  suspendedAt: string | null;
   extraText: string | null;
   createdAt: string;
   updatedAt: string;

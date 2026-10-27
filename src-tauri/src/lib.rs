@@ -71,6 +71,7 @@ pub fn run() {
             commands::save_shortcut_settings,
             commands::set_board_view_group_membership,
             commands::set_todo_priority,
+            commands::set_todo_suspended,
             commands::update_todo_detail,
         ])
         .run(tauri::generate_context!())

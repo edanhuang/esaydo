@@ -189,6 +189,7 @@ function makeTodo(id: string, detail: string, status: Todo["status"], todoGroups
     detail,
     status,
     priority: "normal",
+    suspendedAt: null,
     extraText: null,
     groups: todoGroups,
     tags: [],
