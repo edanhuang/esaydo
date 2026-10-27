@@ -90,6 +90,16 @@ pub fn set_todo_priority(
 }
 
 #[tauri::command]
+pub fn set_todo_suspended(
+    state: State<'_, AppState>,
+    id: String,
+    suspended: bool,
+) -> CommandResult<TodoWithRelations> {
+    let mut conn = lock_conn(&state)?;
+    todo_service::set_todo_suspended(&mut conn, &id, suspended).map_err(to_string)
+}
+
+#[tauri::command]
 pub fn reorder_todos_in_group(
     state: State<'_, AppState>,
     group_id: String,

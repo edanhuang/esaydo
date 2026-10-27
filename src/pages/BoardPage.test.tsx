@@ -18,6 +18,7 @@ import {
   saveSelectedBoardViewId,
   setBoardViewGroupMembership,
   setTodoPriority,
+  setTodoSuspended,
   updateTodoDetail,
 } from "../lib/api";
 import type { BoardView, Group, Todo } from "../types";
@@ -38,6 +39,7 @@ vi.mock("../lib/api", () => ({
   saveSelectedBoardViewId: vi.fn(),
   setBoardViewGroupMembership: vi.fn(),
   setTodoPriority: vi.fn(),
+  setTodoSuspended: vi.fn(),
   updateTodoDetail: vi.fn(),
 }));
 
@@ -133,6 +135,14 @@ describe("BoardPage", () => {
       const updated = {
         ...todos.find((todo) => todo.id === id)!,
         priority,
+      };
+      todos = todos.map((todo) => (todo.id === id ? updated : todo));
+      return updated;
+    });
+    vi.mocked(setTodoSuspended).mockImplementation(async (id, suspended) => {
+      const updated = {
+        ...todos.find((todo) => todo.id === id)!,
+        suspendedAt: suspended ? "2026-06-04T11:00:00.000Z" : null,
       };
       todos = todos.map((todo) => (todo.id === id ? updated : todo));
       return updated;
@@ -412,6 +422,45 @@ describe("BoardPage", () => {
     expect(screen.queryByTitle("高优")).not.toBeInTheDocument();
   });
 
+  it("suspends a todo into the collapsed area and resumes it to its original position", async () => {
+    const user = userEvent.setup();
+    todos = [
+      makeTodo("todo-1", "第一条", "active", [groups[0]], 0),
+      makeTodo("todo-2", "第二条", "active", [groups[0]], 1),
+      makeTodo("todo-3", "第三条", "active", [groups[0]], 2),
+    ];
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await screen.findByText("第二条");
+    fireEvent.contextMenu(getTodoCardByText("第二条"));
+    await user.click(await screen.findByRole("menuitem", { name: "挂起" }));
+
+    await waitFor(() => expect(setTodoSuspended).toHaveBeenCalledWith("todo-2", true));
+    await waitFor(() => expect(screen.queryByText("第二条")).not.toBeInTheDocument());
+    const toggle = screen.getByRole("button", { name: /已挂起 1/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(toggle);
+    expect(screen.getByRole("button", { name: /已挂起 1/ })).toHaveAttribute("aria-expanded", "true");
+    expect(getTodoCardByText("第二条")).toHaveAttribute("data-suspended", "true");
+    expect(
+      Array.from(document.querySelectorAll("[data-todo-card]")).map((card) => card.textContent),
+    ).toEqual(["完成第二条归档", "拖拽排序完成第一条归档", "拖拽排序完成第三条归档"]);
+
+    fireEvent.contextMenu(getTodoCardByText("第二条"));
+    await user.click(await screen.findByRole("menuitem", { name: "取消挂起" }));
+
+    await waitFor(() => expect(setTodoSuspended).toHaveBeenLastCalledWith("todo-2", false));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /已挂起/ })).not.toBeInTheDocument(),
+    );
+    const cardTexts = Array.from(document.querySelectorAll("[data-todo-card]")).map(
+      (card) => card.textContent,
+    );
+    expect(cardTexts).toEqual(["第一条", "第二条", "第三条"].map((text) => `拖拽排序完成${text}归档`));
+    expect(reorderTodosInGroup).not.toHaveBeenCalled();
+  });
+
   it("edits the selected todo inline with Space and Enter", async () => {
     render(<BoardPage onNavigate={vi.fn()} />);
 
@@ -684,6 +733,7 @@ function makeTodo(
     detail,
     status,
     priority: "normal",
+    suspendedAt: null,
     extraText: null,
     groups: todoGroups,
     tags: [],

@@ -24,6 +24,7 @@ import {
   saveSelectedBoardViewId,
   setBoardViewGroupMembership,
   setTodoPriority,
+  setTodoSuspended,
   updateTodoDetail,
 } from "../lib/api";
 import {
@@ -81,6 +82,9 @@ export function BoardPage({
     position: "before" | "after";
   } | null>(null);
   const [inboxDraggedTodoId, setInboxDraggedTodoId] = useState<string | null>(null);
+  const [expandedSuspendedGroupIds, setExpandedSuspendedGroupIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -113,7 +117,18 @@ export function BoardPage({
     [todos],
   );
 
-  const visibleTodoIds = useMemo(() => visibleTodos.map((todo) => todo.id), [visibleTodos]);
+  // 折叠中的挂起 Todo 不可见，不参与键盘选择与编辑
+  const visibleTodoIds = useMemo(
+    () =>
+      visibleTodos
+        .filter(
+          (todo) =>
+            todo.suspendedAt === null ||
+            todo.groups.some((group) => expandedSuspendedGroupIds.has(group.id)),
+        )
+        .map((todo) => todo.id),
+    [visibleTodos, expandedSuspendedGroupIds],
+  );
   function selectTodo(id: string | null) {
     selectedTodoIdRef.current = id;
     setSelectedTodoId(id);
@@ -363,6 +378,35 @@ export function BoardPage({
     }
   }
 
+  async function handleSetTodoSuspended(id: string, suspended: boolean) {
+    const todo = todos.find((item) => item.id === id);
+    if (!todo || (todo.suspendedAt !== null) === suspended) {
+      return;
+    }
+    setError(null);
+    try {
+      const updated = await setTodoSuspended(id, suspended);
+      setTodos((items) => items.map((item) => (item.id === id ? updated : item)));
+      if (!suspended) {
+        selectTodo(updated.id);
+      }
+    } catch (nextError) {
+      setError(String(nextError));
+    }
+  }
+
+  function toggleSuspendedExpanded(groupId: string) {
+    setExpandedSuspendedGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }
+
   function startEditingTodo(id: string) {
     const todo = todos.find((item) => item.id === id);
     if (!todo) {
@@ -445,17 +489,24 @@ export function BoardPage({
     position: "before" | "after",
   ) {
     const currentGroupTodos = todosByGroup.get(groupId) ?? [];
-    const draggedIndex = currentGroupTodos.findIndex((todo) => todo.id === draggedTodoId);
-    const targetIndex = currentGroupTodos.findIndex((todo) => todo.id === targetTodoId);
+    const activeTodos = currentGroupTodos.filter((todo) => todo.suspendedAt === null);
+    const draggedIndex = activeTodos.findIndex((todo) => todo.id === draggedTodoId);
+    const targetIndex = activeTodos.findIndex((todo) => todo.id === targetTodoId);
     if (draggedIndex === -1 || targetIndex === -1) {
       return;
     }
 
-    const orderedIds = currentGroupTodos.map((todo) => todo.id);
-    orderedIds.splice(draggedIndex, 1);
-    const targetIndexAfterRemoval = orderedIds.indexOf(targetTodoId);
+    const orderedActiveIds = activeTodos.map((todo) => todo.id);
+    orderedActiveIds.splice(draggedIndex, 1);
+    const targetIndexAfterRemoval = orderedActiveIds.indexOf(targetTodoId);
     const insertIndex = position === "before" ? targetIndexAfterRemoval : targetIndexAfterRemoval + 1;
-    orderedIds.splice(insertIndex, 0, draggedTodoId);
+    orderedActiveIds.splice(insertIndex, 0, draggedTodoId);
+
+    // 挂起的 Todo 保持原有槽位不动，只重排未挂起的 Todo，取消挂起后才能回到原位置
+    let nextActiveIndex = 0;
+    const orderedIds = currentGroupTodos.map((todo) =>
+      todo.suspendedAt === null ? orderedActiveIds[nextActiveIndex++] : todo.id,
+    );
 
     if (orderedIds.join("|") === currentGroupTodos.map((todo) => todo.id).join("|")) {
       return;
@@ -713,6 +764,9 @@ export function BoardPage({
                   onReopenTodo={(id) => void handleReopenTodo(id)}
                   onArchiveTodo={(id) => void handleArchiveTodo(id)}
                   onSetTodoPriority={(id, priority) => void handleSetTodoPriority(id, priority)}
+                  onSetTodoSuspended={(id, suspended) => void handleSetTodoSuspended(id, suspended)}
+                  suspendedExpanded={expandedSuspendedGroupIds.has(group.id)}
+                  onToggleSuspendedExpanded={() => toggleSuspendedExpanded(group.id)}
                   dragState={dragState}
                   onDragStartTodo={(groupId, draggedTodoId) => {
                     setDragState({ groupId, draggedTodoId, targetTodoId: null, position: "before" });

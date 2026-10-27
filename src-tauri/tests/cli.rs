@@ -211,6 +211,36 @@ fn mark_todo_priority_updates_json_and_plain_list_marks() {
 }
 
 #[test]
+fn mark_todo_suspend_and_resume_updates_json_and_plain_list_marks() {
+    let (_root, path) = database();
+    let created = run_json(&path, &["add", "挂起 CLI", "--group", "工作", "--json"]);
+    let id = created["id"].as_str().expect("todo id");
+    assert!(created["suspendedAt"].is_null());
+
+    let suspended = run_json(&path, &["mark", &id[..8], "--suspend", "--json"]);
+    assert!(suspended["suspendedAt"].is_string());
+
+    cli()
+        .arg("--database")
+        .arg(&path)
+        .args(["list", "--group", "工作"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("suspended"))
+        .stdout(predicate::str::contains("挂起 CLI"));
+
+    let resumed = run_json(&path, &["mark", &id[..8], "--resume", "--json"]);
+    assert!(resumed["suspendedAt"].is_null());
+
+    cli()
+        .arg("--database")
+        .arg(&path)
+        .args(["mark", &id[..8], "--suspend", "--resume"])
+        .assert()
+        .code(2);
+}
+
+#[test]
 fn view_group_status_and_time_filters_compose() {
     let (_root, path) = database();
     let work = run_json(&path, &["add", "工作任务", "--group", "工作", "--json"]);

@@ -82,6 +82,8 @@ easydo add "整理检查合并方案" --group 工作
 easydo update <todo-id-or-unique-prefix> --detail "更新后的内容"
 easydo mark <todo-id-or-unique-prefix> --priority high
 easydo mark <todo-id-or-unique-prefix> --priority normal
+easydo mark <todo-id-or-unique-prefix> --suspend
+easydo mark <todo-id-or-unique-prefix> --resume
 easydo done <todo-id-or-unique-prefix>
 easydo archive <todo-id-or-unique-prefix>
 ```

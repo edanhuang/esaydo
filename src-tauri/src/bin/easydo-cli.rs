@@ -122,12 +122,18 @@ struct UpdateArgs {
 
 #[derive(Debug, Args)]
 #[command(
-    after_help = "示例:\n  easydo mark <todo-id> --priority high --json\n  easydo mark <todo-id> --priority normal"
+    after_help = "示例:\n  easydo mark <todo-id> --priority high --json\n  easydo mark <todo-id> --priority normal\n  easydo mark <todo-id> --suspend\n  easydo mark <todo-id> --resume"
 )]
 struct MarkArgs {
     selector: String,
     #[arg(long)]
     priority: Option<String>,
+    /// 挂起 Todo，Board 中折叠到所属 Group 底部
+    #[arg(long, conflicts_with = "resume")]
+    suspend: bool,
+    /// 取消挂起，回到原排序位置
+    #[arg(long)]
+    resume: bool,
     #[arg(long)]
     json: bool,
 }
@@ -263,14 +269,26 @@ fn run(cli: Cli) -> Result<()> {
                         .as_deref()
                         .map(parse_todo_priority)
                         .transpose()?;
-                    if let Some(priority) = priority {
-                        let todo = todo_service::set_todo_priority(&mut conn, &id, priority)?;
-                        print_todo(&todo, args.json)
+                    let suspended = if args.suspend {
+                        Some(true)
+                    } else if args.resume {
+                        Some(false)
                     } else {
-                        Err(EasyDoError::invalid(
+                        None
+                    };
+                    if priority.is_none() && suspended.is_none() {
+                        return Err(EasyDoError::invalid(
                             "至少需要指定一个标记参数，如 --priority high",
-                        ))
+                        ));
                     }
+                    let mut todo = None;
+                    if let Some(priority) = priority {
+                        todo = Some(todo_service::set_todo_priority(&mut conn, &id, priority)?);
+                    }
+                    if let Some(suspended) = suspended {
+                        todo = Some(todo_service::set_todo_suspended(&mut conn, &id, suspended)?);
+                    }
+                    print_todo(&todo.expect("at least one mark applied"), args.json)
                 }
                 Commands::Done(args) => {
                     let id = resolve_todo_id(&conn, &args.selector)?;
@@ -515,6 +533,9 @@ fn todo_marks(todo: &TodoWithRelations) -> String {
     if todo.priority == "high" {
         marks.push("high");
     }
+    if todo.suspended_at.is_some() {
+        marks.push("suspended");
+    }
     marks.join(",")
 }
 
@@ -586,6 +607,7 @@ mod tests {
             detail: "第一行\n第二行".to_string(),
             status: "active".to_string(),
             priority: "normal".to_string(),
+            suspended_at: None,
             extra_text: None,
             created_at: String::new(),
             updated_at: String::new(),

@@ -88,6 +88,10 @@ export function setTodoPriority(id: string, priority: TodoPriority): Promise<Tod
   return invoke("set_todo_priority", { id, priority });
 }
 
+export function setTodoSuspended(id: string, suspended: boolean): Promise<Todo> {
+  return invoke("set_todo_suspended", { id, suspended });
+}
+
 export function reorderTodosInGroup(groupId: string, todoIds: string[]): Promise<void> {
   return invoke("reorder_todos_in_group", { groupId, todoIds });
 }
