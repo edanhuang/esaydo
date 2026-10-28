@@ -1,4 +1,5 @@
 import * as React from "react";
+import { flushSync } from "react-dom";
 
 import { getSquirclePath } from "@/lib/squircle";
 import { cn } from "@/lib/utils";
@@ -39,7 +40,9 @@ export function Squircle({
     if (typeof ResizeObserver === "undefined") {
       return;
     }
-    const observer = new ResizeObserver(update);
+    // 回调在排版后、绘制前执行；普通 setState 会被 React 推到绘制之后，
+    // 输入框换行变高的那一帧底板还是旧尺寸，新的一行露在外面像闪了一下，所以这里同步提交
+    const observer = new ResizeObserver(() => flushSync(update));
     observer.observe(node);
     return () => observer.disconnect();
   }, []);

@@ -8,10 +8,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowUp } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { FIELD_SEND_BUTTON_CLASS, FIELD_TEXTAREA_CLASS, FieldBox } from "@/components/ui/field-box";
+import { FIELD_TEXTAREA_CLASS, FieldBox, FieldSendButton } from "@/components/ui/field-box";
 import type { Group } from "@/types";
 
 interface TodoInputProps {
@@ -137,16 +136,12 @@ export function TodoInput({
           placeholder="要做点什么"
           autoFocus
         />
-        <button
-          type="button"
+        <FieldSendButton
           title="保存 Todo"
-          disabled={!value.trim() || groups.length === 0}
+          visible={Boolean(value.trim())}
+          disabled={groups.length === 0}
           onClick={onSubmit}
-          className={FIELD_SEND_BUTTON_CLASS}
-        >
-          <ArrowUp className="size-3" />
-          <span className="sr-only">保存 Todo</span>
-        </button>
+        />
       </FieldBox>
     </div>
   );

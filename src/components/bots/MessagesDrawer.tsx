@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type React from "react";
-import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, PenLine, SquareTerminal, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, PenLine, SquareTerminal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FIELD_SEND_BUTTON_CLASS, FIELD_TEXTAREA_CLASS, FieldBox } from "@/components/ui/field-box";
+import { FIELD_TEXTAREA_CLASS, FieldBox, FieldSendButton } from "@/components/ui/field-box";
 import { Textarea } from "@/components/ui/textarea";
 import {
   dispatchTodoToBot,
@@ -503,15 +503,12 @@ function Chat({
               }
             }}
           />
-          <button
-            type="button"
+          <FieldSendButton
             title="发送"
-            disabled={running || sending || !input.trim()}
-            className={FIELD_SEND_BUTTON_CLASS}
+            visible={Boolean(input.trim())}
+            disabled={running || sending}
             onClick={() => void send()}
-          >
-            <ArrowUp className="size-3" />
-          </button>
+          />
         </FieldBox>
       </div>
     </>

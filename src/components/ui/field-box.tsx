@@ -1,4 +1,6 @@
 import type React from "react";
+import { CornerDownLeft } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Squircle } from "./squircle";
 
 /**
@@ -37,6 +39,40 @@ export const FIELD_INPUT_CLASS =
 export const FIELD_TEXTAREA_CLASS =
   "min-h-8 resize-none rounded-none border-0 bg-transparent px-1 py-1.5 text-[15px] leading-5 text-easydo-cream shadow-none caret-[hsl(var(--easydo-text-muted)/0.7)] placeholder:text-[14px] placeholder:font-light placeholder:text-[hsl(var(--easydo-text-muted)/0.55)] focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent md:text-[15px] md:leading-5";
 
-/** 与底部录入框一致的发送按钮 */
-export const FIELD_SEND_BUTTON_CLASS =
-  "mb-1 mr-1.5 grid size-6 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-opacity duration-150 hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-35";
+/**
+ * 输入框里的发送键：回车图标，平时没有底色，悬停时渐显圆角方形底色。
+ * 没有文字时淡出隐藏，但仍占着位置，输入第一个字时正文不会因为按钮出现而重新换行
+ */
+export function FieldSendButton({
+  title,
+  visible,
+  disabled = false,
+  onClick,
+}: {
+  title: string;
+  visible: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-hidden={visible ? undefined : true}
+      tabIndex={visible ? undefined : -1}
+      disabled={disabled || !visible}
+      data-visible={visible ? "true" : "false"}
+      className={cn(
+        "mb-0.5 mr-1 grid size-7 shrink-0 place-items-center rounded-[7px] text-easydo-textMuted",
+        "transition-[background-color,color,opacity,visibility] duration-150 ease-out",
+        "hover:bg-easydo-surfaceHover hover:text-easydo-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+        "disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-easydo-textMuted",
+        visible ? "visible opacity-100" : "invisible opacity-0",
+      )}
+      onClick={onClick}
+    >
+      <CornerDownLeft className="size-4" strokeWidth={2} />
+      <span className="sr-only">{title}</span>
+    </button>
+  );
+}
