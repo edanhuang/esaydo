@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { FIELD_INPUT_CLASS, FieldBox } from "@/components/ui/field-box";
 import { Input } from "@/components/ui/input";
 import { chooseBotDirectory, countBotMessages, createBot, deleteBot, updateBot } from "@/lib/api";
 import {
@@ -24,6 +25,7 @@ import {
   providerLabel,
   type BotColorChoice,
 } from "@/lib/bots";
+import { useLastPresent } from "@/lib/useLastPresent";
 import { cn } from "@/lib/utils";
 import type { AppView, Bot, BotInput } from "@/types";
 
@@ -182,7 +184,6 @@ function BotRow({ bot, onEdit, onDelete }: { bot: Bot; onEdit: () => void; onDel
 }
 
 const fieldLabel = "text-xs text-easydo-textSecondary";
-const inputClass = "h-8 border-easydo-border bg-easydo-surface text-sm text-easydo-cream md:text-sm";
 
 function BotFormDialog({
   bot,
@@ -196,6 +197,7 @@ function BotFormDialog({
   onSaved: () => void;
 }) {
   const [draft, setDraft] = useState<BotDraft>(emptyDraft());
+  const shownBot = useLastPresent(bot);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -249,19 +251,21 @@ function BotFormDialog({
     <Dialog open={bot !== null} onOpenChange={(open) => (open ? undefined : onClose())}>
       <DialogContent className="grid-cols-[minmax(0,1fr)] gap-0 overflow-hidden border-easydo-border bg-easydo-bg p-0 text-easydo-cream shadow-easydo-card sm:max-w-[460px]">
         <DialogHeader className="border-b border-easydo-borderSoft px-4 py-3">
-          <DialogTitle className="text-sm font-semibold text-easydo-cream">{bot === "new" ? "新建 Bot" : "编辑 Bot"}</DialogTitle>
+          <DialogTitle className="text-sm font-semibold text-easydo-cream">{shownBot === "new" ? "新建 Bot" : "编辑 Bot"}</DialogTitle>
           <DialogDescription className="sr-only">设置 Bot 的名称、颜色、AI、模型和工作目录</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4 px-4 py-4">
           <label className="flex flex-col gap-1.5">
             <span className={fieldLabel}>名称</span>
-            <Input
-              aria-label="Bot 名称"
-              value={draft.name}
-              placeholder="周报助手"
-              className={inputClass}
-              onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
-            />
+            <FieldBox radius={10}>
+              <Input
+                aria-label="Bot 名称"
+                value={draft.name}
+                placeholder="周报助手"
+                className={FIELD_INPUT_CLASS}
+                onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+              />
+            </FieldBox>
           </label>
 
           <div className="flex flex-col gap-1.5">
@@ -328,14 +332,16 @@ function BotFormDialog({
 
           <label className="flex flex-col gap-1.5">
             <span className={fieldLabel}>模型</span>
-            <Input
-              aria-label="模型"
-              list={`bot-models-${draft.provider}`}
-              value={draft.model}
-              placeholder="留空使用默认模型"
-              className={inputClass}
-              onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}
-            />
+            <FieldBox radius={10}>
+              <Input
+                aria-label="模型"
+                list={`bot-models-${draft.provider}`}
+                value={draft.model}
+                placeholder="留空使用默认模型"
+                className={FIELD_INPUT_CLASS}
+                onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}
+              />
+            </FieldBox>
             <datalist id={`bot-models-${draft.provider}`}>
               {BOT_MODEL_SUGGESTIONS[draft.provider].map((model) => (
                 <option key={model} value={model} />
@@ -346,13 +352,15 @@ function BotFormDialog({
           <div className="flex flex-col gap-1.5">
             <span className={fieldLabel}>工作目录</span>
             <div className="flex gap-1.5">
-              <Input
-                aria-label="工作目录"
-                value={draft.directory}
-                placeholder="Bot 在这个目录里干活"
-                className={cn(inputClass, "flex-1")}
-                onChange={(event) => setDraft((current) => ({ ...current, directory: event.target.value }))}
-              />
+              <FieldBox radius={10} className="min-w-0 flex-1">
+                <Input
+                  aria-label="工作目录"
+                  value={draft.directory}
+                  placeholder="Bot 在这个目录里干活"
+                  className={FIELD_INPUT_CLASS}
+                  onChange={(event) => setDraft((current) => ({ ...current, directory: event.target.value }))}
+                />
+              </FieldBox>
               <Button
                 type="button"
                 variant="outline"
@@ -401,11 +409,13 @@ function emptyDraft(): BotDraft {
 function DeleteBotDialog({ bot, onClose, onDeleted }: { bot: Bot | null; onClose: () => void; onDeleted: () => void }) {
   const [messageCount, setMessageCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const shownBot = useLastPresent(bot);
 
   useEffect(() => {
-    setError(null);
-    setMessageCount(null);
+    // 关闭时不清空，关闭动画里的文案保持不变
     if (bot) {
+      setError(null);
+      setMessageCount(null);
       countBotMessages(bot.id)
         .then(setMessageCount)
         .catch(() => setMessageCount(null));
@@ -428,7 +438,7 @@ function DeleteBotDialog({ bot, onClose, onDeleted }: { bot: Bot | null; onClose
     <Dialog open={bot !== null} onOpenChange={(open) => (open ? undefined : onClose())}>
       <DialogContent className="grid-cols-[minmax(0,1fr)] gap-3 border-easydo-border bg-easydo-bg text-easydo-cream shadow-easydo-card sm:max-w-[380px]">
         <DialogHeader>
-          <DialogTitle className="text-sm font-semibold text-easydo-cream">删除「{bot?.name}」？</DialogTitle>
+          <DialogTitle className="text-sm font-semibold text-easydo-cream">删除「{shownBot?.name}」？</DialogTitle>
           <DialogDescription className="text-xs text-easydo-textSecondary">
             {messageCount === null
               ? "它名下的会话和消息会一起删除。"

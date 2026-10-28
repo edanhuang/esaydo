@@ -121,6 +121,14 @@ export type AppView = "board" | "daily" | "bots";
 
 export type BotProvider = "claude" | "codex";
 
+/** 「在终端打开」Bot 会话时用的终端 App */
+export type TerminalApp = "terminal" | "ghostty" | "iterm2";
+
+export interface TerminalSettings {
+  version: 1;
+  app: TerminalApp;
+}
+
 export type BotColor = "amber" | "olive" | "moss" | "teal" | "indigo" | "plum" | "rose" | "graphite";
 
 export interface BotUsage {

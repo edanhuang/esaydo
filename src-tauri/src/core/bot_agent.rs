@@ -362,6 +362,52 @@ fn shell_path() -> Option<String> {
     output.rsplit(MARKER).next().map(|path| path.trim().to_string())
 }
 
+/// 单引号包起来给 shell 用，内容里的单引号转义掉
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+/// 宿主 Claude Code 会话塞给子进程的环境变量（zsh 的 unset -m 模式）。
+/// EasyDo 如果是从某个 Claude Code 会话里启动的，会继承这些变量；再传给 Bot 或终端里的 claude，
+/// 它会以为自己是别的会话的子进程——例如 CLAUDE_CODE_CHILD_SESSION 会让它不保存对话记录
+const HOST_SESSION_MARKERS: [&str; 6] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_*",
+    "CLAUDE_AGENT_SDK_*",
+    "CLAUDE_PID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_PREVIEW_CLASSIFIER_FLOOR",
+];
+
+pub fn is_host_session_marker(name: &str) -> bool {
+    HOST_SESSION_MARKERS.iter().any(|pattern| match pattern.strip_suffix('*') {
+        Some(prefix) => name.starts_with(prefix),
+        None => name == *pattern,
+    })
+}
+
+/// 当前进程环境里的宿主会话标记，起子进程前逐个去掉
+pub fn host_session_markers() -> Vec<String> {
+    std::env::vars().map(|(name, _)| name).filter(|name| is_host_session_marker(name)).collect()
+}
+
+/// 在终端里接着 Bot 会话的脚本：进入工作目录，用 resume 打开同一个会话。
+/// 先在不读配置的 zsh 里清掉宿主会话标记，再换成交互式登录 shell 执行——这样拿得到终端里的 PATH
+/// （nvm 装的 claude / codex 在那里），用户自己在配置里设的变量也照常生效
+pub fn resume_script(provider: &str, cwd: &str, session_id: &str) -> String {
+    let resume = if provider == "codex" {
+        format!("codex resume {}", shell_quote(session_id))
+    } else {
+        format!("claude --resume {}", shell_quote(session_id))
+    };
+    let markers = HOST_SESSION_MARKERS.map(shell_quote).join(" ");
+    format!(
+        "#!/bin/zsh -f\nunset -m {markers}\ncd {} || exit 1\nexec /bin/zsh -ilc {}\n",
+        shell_quote(cwd),
+        shell_quote(&resume)
+    )
+}
+
 pub fn find_program(name: &str, path: &str) -> Option<PathBuf> {
     path.split(':')
         .map(|dir| Path::new(dir).join(name))
@@ -480,6 +526,30 @@ mod tests {
             claude_project_dir_name("/Users/me/IdeaProjects/esaydo"),
             "-Users-me-IdeaProjects-esaydo"
         );
+    }
+
+    #[test]
+    fn resume_scripts_clear_host_markers_then_resume_in_a_login_shell() {
+        let script = resume_script("claude", "/work/my repo", "s-1");
+        let lines: Vec<&str> = script.lines().collect();
+        assert_eq!(lines[0], "#!/bin/zsh -f");
+        assert!(lines[1].starts_with("unset -m 'CLAUDECODE' 'CLAUDE_CODE_*'"));
+        assert_eq!(lines[2], "cd '/work/my repo' || exit 1");
+        assert_eq!(lines[3], r"exec /bin/zsh -ilc 'claude --resume '\''s-1'\'''");
+
+        let codex = resume_script("codex", "/it's/here", "t-1");
+        assert!(codex.contains(r"cd '/it'\''s/here' || exit 1"));
+        assert!(codex.contains("codex resume"));
+    }
+
+    #[test]
+    fn recognises_host_session_markers_only() {
+        for name in ["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_AGENT_SDK_VERSION", "CLAUDE_PID"] {
+            assert!(is_host_session_marker(name), "{name}");
+        }
+        for name in ["ANTHROPIC_BASE_URL", "CLAUDE_CONFIG_DIR", "PATH", "CODEX_HOME"] {
+            assert!(!is_host_session_marker(name), "{name}");
+        }
     }
 
     #[test]

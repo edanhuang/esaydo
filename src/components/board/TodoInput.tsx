@@ -10,7 +10,8 @@ import {
 } from "@/components/ui/select";
 import { ArrowUp } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
-import { Squircle } from "@/components/ui/squircle";
+import { cn } from "@/lib/utils";
+import { FIELD_SEND_BUTTON_CLASS, FIELD_TEXTAREA_CLASS, FieldBox } from "@/components/ui/field-box";
 import type { Group } from "@/types";
 
 interface TodoInputProps {
@@ -85,15 +86,7 @@ export function TodoInput({
 
   return (
     <div className="bg-dot-grid shrink-0 bg-easydo-bg px-4 pb-2.5 pt-1">
-      <Squircle
-        radius={14}
-        fill="hsl(var(--easydo-surface))"
-        stroke="hsl(var(--easydo-border))"
-        // 平时只留很轻的投影，悬停或聚焦时略微浮起
-        shadow="var(--easydo-shadow-composer)"
-        raisedShadow="var(--easydo-shadow-composer-focus)"
-        className="mx-auto flex w-full max-w-[960px] items-end gap-2 p-1.5"
-      >
+      <FieldBox className="mx-auto flex w-full max-w-[960px] items-end gap-2 p-1.5">
         <Select
           value={currentGroupId ?? undefined}
           onValueChange={(groupId) => {
@@ -140,7 +133,7 @@ export function TodoInput({
             isComposingRef.current = false;
           }}
           rows={1}
-          className="max-h-40 min-h-8 min-w-0 flex-1 resize-none rounded-none border-0 bg-transparent px-1 py-1.5 text-[15px] leading-5 text-easydo-cream md:text-[15px] md:leading-5 shadow-none caret-[hsl(var(--easydo-text-muted)/0.7)] placeholder:text-[14px] placeholder:font-light placeholder:text-[hsl(var(--easydo-text-muted)/0.55)] focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
+          className={cn(FIELD_TEXTAREA_CLASS, "max-h-40 min-w-0 flex-1")}
           placeholder="要做点什么"
           autoFocus
         />
@@ -149,12 +142,12 @@ export function TodoInput({
           title="保存 Todo"
           disabled={!value.trim() || groups.length === 0}
           onClick={onSubmit}
-          className="mb-1 mr-1.5 grid size-6 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-opacity duration-150 hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-35"
+          className={FIELD_SEND_BUTTON_CLASS}
         >
           <ArrowUp className="size-3" />
           <span className="sr-only">保存 Todo</span>
         </button>
-      </Squircle>
+      </FieldBox>
     </div>
   );
 }

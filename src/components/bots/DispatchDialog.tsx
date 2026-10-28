@@ -8,9 +8,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { FIELD_TEXTAREA_CLASS, FieldBox } from "@/components/ui/field-box";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { dispatchTodoToBot, getBotDispatchPreview } from "@/lib/api";
 import { providerLabel } from "@/lib/bots";
+import { useLastPresent } from "@/lib/useLastPresent";
 import type { Bot, DispatchPreview, Todo } from "@/types";
 import { BotAvatar } from "./BotAvatar";
 
@@ -28,14 +31,16 @@ export function DispatchDialog({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const isComposingRef = useRef(false);
+  const shown = useLastPresent(target);
 
   useEffect(() => {
-    setInstruction("");
-    setError(null);
-    setPreview(null);
+    // 关闭时不清空，关闭动画里的内容保持不变；下次打开再重置
     if (!target) {
       return;
     }
+    setInstruction("");
+    setError(null);
+    setPreview(null);
     getBotDispatchPreview(target.todo.id, target.bot.id)
       .then(setPreview)
       .catch(() => setPreview(null));
@@ -57,7 +62,7 @@ export function DispatchDialog({
     }
   }
 
-  const headline = target?.todo.detail.split("\n").find((line) => line.trim()) ?? "";
+  const headline = shown?.todo.detail.split("\n").find((line) => line.trim()) ?? "";
 
   return (
     <Dialog open={target !== null} onOpenChange={(open) => (open ? undefined : onClose())}>
@@ -67,18 +72,18 @@ export function DispatchDialog({
           <DialogTitle className="text-sm font-semibold text-easydo-cream">派发给 Bot</DialogTitle>
           <DialogDescription className="sr-only">把这条 Todo 交给 Bot 处理</DialogDescription>
         </DialogHeader>
-        {target ? (
+        {shown ? (
           <div className="flex flex-col gap-3 px-4 py-4 text-sm">
             <div className="flex items-center gap-2">
-              <BotAvatar color={target.bot.color} />
-              <span className="font-medium">{target.bot.name}</span>
+              <BotAvatar color={shown.bot.color} />
+              <span className="font-medium">{shown.bot.name}</span>
               <span className="text-xs text-easydo-textMuted">
-                {providerLabel(target.bot.provider)}
-                {target.bot.model ? ` · ${target.bot.model}` : ""}
+                {providerLabel(shown.bot.provider)}
+                {shown.bot.model ? ` · ${shown.bot.model}` : ""}
               </span>
             </div>
-            <p className="truncate text-xs text-easydo-textMuted" title={target.bot.directory}>
-              工作目录：{directoryName(target.bot.directory)}
+            <p className="truncate text-xs text-easydo-textMuted" title={shown.bot.directory}>
+              工作目录：{directoryName(shown.bot.directory)}
             </p>
             <p className="line-clamp-2 rounded-md bg-easydo-surface px-2.5 py-2 text-easydo-textSecondary">{headline}</p>
             {preview?.sessionTitle ? (
@@ -87,11 +92,12 @@ export function DispatchDialog({
             {preview?.sessionWillReset ? (
               <p className="text-xs text-easydo-textSecondary">Bot 换过 AI 或目录，这次会新开会话，之前的上下文不会带过去。</p>
             ) : null}
+            <FieldBox className="p-1.5">
             <Textarea
               aria-label="补充说明"
               value={instruction}
               placeholder="补充说明（可不填，默认按 Todo 内容处理）"
-              className="min-h-20 resize-none border-easydo-border bg-easydo-surface text-sm text-easydo-cream placeholder:font-light placeholder:text-[hsl(var(--easydo-text-muted)/0.55)] md:text-sm"
+              className={cn(FIELD_TEXTAREA_CLASS, "min-h-20 w-full px-1.5")}
               onChange={(event) => setInstruction(event.target.value)}
               onCompositionStart={() => {
                 isComposingRef.current = true;
@@ -106,6 +112,7 @@ export function DispatchDialog({
                 }
               }}
             />
+            </FieldBox>
             {error ? (
               <p role="alert" className="text-xs text-destructive">
                 {error}

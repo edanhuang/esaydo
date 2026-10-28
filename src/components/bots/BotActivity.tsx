@@ -5,10 +5,13 @@ import {
   listBotUnread,
   listBots,
   onBotRunsChanged,
+  onConfirmQuit,
+  quitApp,
   stopBotRun,
 } from "@/lib/api";
 import type { ActiveBotRun, Bot, Todo, TodoUnread } from "@/types";
 import { DispatchDialog } from "./DispatchDialog";
+import { QuitConfirmDialog } from "./QuitConfirmDialog";
 import { MessagesDrawer } from "./MessagesDrawer";
 
 export interface MessagesTarget {
@@ -21,6 +24,8 @@ export interface BotActivityValue {
   /** 首次加载完成前为 false，避免已有 Bot 的人在 Bot 页先看到空状态 */
   loaded: boolean;
   runningBotFor: (todoId: string) => Bot | null;
+  /** 这条 Todo 当前这次运行的开始时间，没在运行时为 null */
+  runStartedAt: (todoId: string) => string | null;
   unreadFor: (todoId: string) => TodoUnread | null;
   totalUnread: number;
   /** Bot 运行状态或消息有变化就加一；看板据此刷新 Todo（Bot 可能改了内容） */
@@ -36,6 +41,7 @@ export const EMPTY_BOT_ACTIVITY: BotActivityValue = {
   bots: [],
   loaded: true,
   runningBotFor: () => null,
+  runStartedAt: () => null,
   unreadFor: () => null,
   totalUnread: 0,
   version: 0,
@@ -65,6 +71,7 @@ export function BotActivityProvider({
   const [version, setVersion] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [dispatchTarget, setDispatchTarget] = useState<{ todo: Todo; bot: Bot } | null>(null);
+  const [quitCount, setQuitCount] = useState<number | null>(null);
   const [drawer, setDrawer] = useState<{ open: boolean; target: MessagesTarget | null }>({
     open: false,
     target: null,
@@ -97,10 +104,29 @@ export function BotActivityProvider({
         }
       })
       .catch(() => undefined);
+    let unlistenQuit: (() => void) | null = null;
+    // 弹窗开着时再按一次 ⌘Q，直接退出
+    onConfirmQuit((count) =>
+      setQuitCount((current) => {
+        if (current !== null) {
+          void quitApp();
+        }
+        return count;
+      }),
+    )
+      .then((dispose) => {
+        if (disposed) {
+          dispose();
+        } else {
+          unlistenQuit = dispose;
+        }
+      })
+      .catch(() => undefined);
     window.addEventListener("focus", refresh);
     return () => {
       disposed = true;
       unlisten?.();
+      unlistenQuit?.();
       window.removeEventListener("focus", refresh);
     };
   }, [refresh]);
@@ -119,6 +145,7 @@ export function BotActivityProvider({
       bots,
       loaded,
       runningBotFor: (todoId) => runningByTodo.get(todoId) ?? null,
+      runStartedAt: (todoId) => runs.find((item) => item.todoId === todoId)?.startedAt ?? null,
       unreadFor: (todoId) => unreadByTodo.get(todoId) ?? null,
       totalUnread: unread.reduce((total, item) => total + item.count, 0),
       version,
@@ -145,6 +172,11 @@ export function BotActivityProvider({
           setDispatchTarget(null);
           void refresh();
         }}
+      />
+      <QuitConfirmDialog
+        runningCount={quitCount}
+        onCancel={() => setQuitCount(null)}
+        onConfirm={() => void quitApp()}
       />
       <MessagesDrawer
         open={drawer.open}

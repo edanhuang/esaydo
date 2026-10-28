@@ -1,14 +1,110 @@
+@import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* 深色主题由根元素上的 .dark 切换 */
+@custom-variant dark (&:is(.dark *));
+
+/* 颜色都指向运行时变量（浅色 / 深色各一套），用 inline 让工具类直接取变量值 */
+@theme inline {
+  --color-easydo-bg: hsl(var(--easydo-bg));
+  --color-easydo-bgSoft: hsl(var(--easydo-bg-soft));
+  --color-easydo-surface: hsl(var(--easydo-surface));
+  --color-easydo-surfaceWarm: hsl(var(--easydo-surface-warm));
+  --color-easydo-surfaceHover: hsl(var(--easydo-surface-hover));
+  --color-easydo-surfaceActive: hsl(var(--easydo-surface-active));
+  --color-easydo-cream: hsl(var(--easydo-cream));
+  --color-easydo-text: hsl(var(--easydo-text));
+  --color-easydo-textSecondary: hsl(var(--easydo-text-secondary));
+  --color-easydo-textMuted: hsl(var(--easydo-text-muted));
+  --color-easydo-textDisabled: hsl(var(--easydo-text-disabled));
+  --color-easydo-gold: hsl(var(--easydo-gold));
+  --color-easydo-goldHover: hsl(var(--easydo-gold-hover));
+  --color-easydo-goldActive: hsl(var(--easydo-gold-active));
+  --color-easydo-goldSoft: hsl(var(--easydo-gold-soft));
+  --color-easydo-lavender: hsl(var(--easydo-lavender));
+  --color-easydo-lavenderSoft: hsl(var(--easydo-lavender-soft));
+  --color-easydo-lavenderSurface: hsl(var(--easydo-lavender-surface));
+  --color-easydo-violet: hsl(var(--easydo-violet));
+  --color-easydo-border: hsl(var(--easydo-border));
+  --color-easydo-borderSoft: hsl(var(--easydo-border-soft));
+  --color-easydo-borderLavender: hsl(var(--easydo-border-lavender));
+  --color-easydo-success: hsl(var(--easydo-success));
+  --color-easydo-warning: hsl(var(--easydo-warning));
+  --color-easydo-danger: hsl(var(--easydo-danger));
+  --color-easydo-info: hsl(var(--easydo-info));
+  --color-easydo-onAccent: hsl(var(--easydo-on-accent));
+  --color-easydo-grid: hsl(var(--easydo-grid));
+
+  --color-border: hsl(var(--border));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  --font-sans: var(--easydo-font);
+  --font-heading: var(--easydo-font);
+}
+
+/* 全局统一圆角：与画布卡片一致，全部 4px（只有 full 保持正圆）。static：组件里有 var(--radius-md) 这类直接引用，变量要一直输出 */
+@theme static {
+  --radius-xs: 4px;
+  --radius-sm: 4px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+  --radius-2xl: 4px;
+  --radius-3xl: 4px;
+  --radius-4xl: 4px;
+  --radius-easydo: 4px;
+  --radius-easydo-lg: 4px;
+  --radius-easydo-xl: 4px;
+}
+
+/* 全局统一字号：正文和标题都是 13px / 18px，层级靠字重区分 */
+@theme {
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.125rem;
+  --text-base: 0.8125rem;
+  --text-base--line-height: 1.125rem;
+  --text-lg: 0.8125rem;
+  --text-lg--line-height: 1.125rem;
+  --text-xl: 0.8125rem;
+  --text-xl--line-height: 1.125rem;
+
+  --shadow-easydo-card: var(--easydo-shadow-card);
+  --shadow-easydo-card-hover: var(--easydo-shadow-card-hover);
+  --shadow-easydo-card-hover-soft: var(--easydo-shadow-card-hover-soft);
+  --shadow-easydo-glow: var(--easydo-shadow-glow);
+  --shadow-easydo-lavender: var(--easydo-shadow-lavender);
+  --shadow-easydo-composer: var(--easydo-shadow-composer);
+}
 
 :root {
   /* Terrazzo（Hallmark 主题）：米白纸面、墨黑正文与主按钮、铁锈红只标记完成、选中和高优 */
-  --font-heading: var(--font-sans);
-  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", sans-serif;
+  --easydo-font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", sans-serif;
   --titlebar-height: 44px;
   --traffic-light-inset: 80px;
 
@@ -255,7 +351,18 @@
     animation: pane-in-back 240ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
+  /* Bot 处理中：笔尖一顿一顿地往右写，底下的线跟着画出来，写满一段抬笔回到开头 */
+  .bot-writing-pen {
+    animation: bot-writing-pen 2s ease-in-out infinite;
+  }
+
+  .bot-writing-line {
+    animation: bot-writing-line 2s ease-in-out infinite;
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    .bot-writing-pen,
+    .bot-writing-line,
     .bot-breathing,
     .bot-hint-nudge,
     .drawer-enter,
@@ -292,6 +399,68 @@
   }
   50% {
     translate: 2px -4px;
+  }
+}
+
+@keyframes bot-writing-pen {
+  0% {
+    translate: 0 0;
+    rotate: 0deg;
+  }
+  10% {
+    translate: 4px -2px;
+    rotate: -8deg;
+  }
+  20% {
+    translate: 8px 0;
+    rotate: 0deg;
+  }
+  30% {
+    translate: 12px -2px;
+    rotate: -8deg;
+  }
+  40% {
+    translate: 16px 0;
+    rotate: 0deg;
+  }
+  50% {
+    translate: 20px -2px;
+    rotate: -8deg;
+  }
+  60% {
+    translate: 24px 0;
+    rotate: 0deg;
+  }
+  70% {
+    translate: 28px -1px;
+    rotate: -4deg;
+  }
+  80% {
+    translate: 28px -5px;
+    rotate: -12deg;
+  }
+  100% {
+    translate: 0 0;
+    rotate: 0deg;
+  }
+}
+
+@keyframes bot-writing-line {
+  0% {
+    scale: 0 1;
+    opacity: 1;
+  }
+  70% {
+    scale: 0.66 1;
+    opacity: 1;
+  }
+  85% {
+    scale: 0.66 1;
+    opacity: 1;
+  }
+  100% {
+    scale: 0.66 1;
+    opacity: 0;
   }
 }
 

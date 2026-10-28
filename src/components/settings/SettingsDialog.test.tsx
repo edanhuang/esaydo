@@ -10,6 +10,13 @@ import type {
   SkillInstallLocationStatus,
 } from "@/types";
 
+// 终端设置走 Tauri 命令，这里的用例不关心，固定返回默认值
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  getTerminalSettings: vi.fn(async () => ({ version: 1, app: "terminal" })),
+  saveTerminalSettings: vi.fn(async (settings: unknown) => settings),
+}));
+
 describe("SettingsDialog", () => {
   const cliNotInstalled: CliInstallStatus = {
     state: "notInstalled",

@@ -26,6 +26,8 @@ interface TodoCardProps {
   variant?: "list" | "canvas";
   /** 画布卡片拉高后默认显示的子项条数，其余悬停时展开 */
   visibleChecklistRows?: number;
+  /** 画布卡片：悬停中（含离开后的短暂缓冲）或正在拖动、缩放，展开全部子项 */
+  expanded?: boolean;
   selected: boolean;
   editing: boolean;
   editingValue: string;
@@ -59,6 +61,7 @@ export function TodoCard({
   todo,
   variant = "list",
   visibleChecklistRows = 0,
+  expanded = false,
   selected,
   editing,
   editingValue,
@@ -238,7 +241,7 @@ export function TodoCard({
           className={cn(
             canvas
               ? cn(
-                  "group relative w-full flex-1 cursor-grab select-none rounded-[4px] border bg-[hsl(var(--easydo-surface)/0.82)] px-2 py-1.5 text-left transition-[border-color,box-shadow,opacity] duration-200 ease-out active:cursor-grabbing",
+                  "group relative min-h-0 w-full flex-1 cursor-grab select-none overflow-hidden rounded-[4px] border bg-[hsl(var(--easydo-surface)/0.82)] px-2 py-1.5 text-left transition-[border-color,box-shadow,opacity] duration-200 ease-out active:cursor-grabbing",
                   // 编辑中不显示选中描边，卡片外观保持不变，只多一个光标
                   selected && !editing
                     ? "border-easydo-gold"
@@ -348,7 +351,7 @@ export function TodoCard({
               detail={todo.detail}
               done={done}
               highPriority={highPriority}
-              revealOnHover={canvas && !selected}
+              collapsed={canvas && !selected && !expanded}
               pinnedChecklistRows={visibleChecklistRows}
               compact={canvas}
               onToggleChecklistLine={onToggleChecklistLine}
@@ -460,9 +463,9 @@ interface TodoDetailLinesProps {
   detail: string;
   done: boolean;
   highPriority: boolean;
-  /** 画布上未选中的卡片：平时只显示正文，鼠标悬停在卡片上时展开子项 */
-  revealOnHover?: boolean;
-  /** 悬停展开模式下仍然默认显示的前几条子项 */
+  /** 画布上收起的卡片：只显示正文，子项要悬停或选中才展开 */
+  collapsed?: boolean;
+  /** 收起时仍然显示的前几条子项 */
   pinnedChecklistRows?: number;
   /** 画布卡片：字号更小，文字不可选，整张卡都能拖动 */
   compact?: boolean;
@@ -482,7 +485,7 @@ function TodoDetailLines({
   detail,
   done,
   highPriority,
-  revealOnHover = false,
+  collapsed = false,
   pinnedChecklistRows = 0,
   compact = false,
   onToggleChecklistLine,
@@ -538,7 +541,7 @@ function TodoDetailLines({
             data-checklist-row
             className={cn(
               "min-h-[18px] min-w-0 items-start gap-2 text-sm text-easydo-textSecondary",
-              revealOnHover && checklistOrder >= pinnedChecklistRows ? "hidden group-hover:flex" : "flex",
+              collapsed && checklistOrder >= pinnedChecklistRows ? "hidden" : "flex",
             )}
           >
             {index === 0 ? flag : null}

@@ -38,6 +38,8 @@ import type { CanvasPosition, Todo, TodoPriority } from "../../types";
 import { TodoCard } from "./TodoCard";
 
 const DRAG_THRESHOLD = 4;
+// 鼠标离开卡片后等一会儿再收起：划过头一点或斜着去够角上的手柄时，卡片不会立刻缩回去
+export const CARD_COLLAPSE_DELAY = 100;
 const GRID_STEP = 20;
 // 触控板捏合一次的滚动量很小，按指数换算成缩放倍数；鼠标 Ctrl+滚轮一格量很大，先截断
 const PINCH_ZOOM_SPEED = 0.01;
@@ -86,10 +88,10 @@ const RESIZE_HANDLES: Array<{ direction: ResizeDirection; className: string }> =
   { direction: "s", className: "bottom-0 left-2 right-2 h-2 translate-y-1/2 cursor-ns-resize" },
   { direction: "e", className: "bottom-2 right-0 top-2 w-2 translate-x-1/2 cursor-ew-resize" },
   { direction: "w", className: "bottom-2 left-0 top-2 w-2 -translate-x-1/2 cursor-ew-resize" },
-  { direction: "ne", className: "right-0 top-0 size-3 -translate-y-1/2 translate-x-1/2 cursor-nesw-resize" },
-  { direction: "nw", className: "left-0 top-0 size-3 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize" },
-  { direction: "se", className: "bottom-0 right-0 size-3 translate-x-1/2 translate-y-1/2 cursor-nwse-resize" },
-  { direction: "sw", className: "bottom-0 left-0 size-3 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize" },
+  { direction: "ne", className: "right-0 top-0 size-4 -translate-y-1/2 translate-x-1/2 cursor-nesw-resize" },
+  { direction: "nw", className: "left-0 top-0 size-4 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize" },
+  { direction: "se", className: "bottom-0 right-0 size-4 translate-x-1/2 translate-y-1/2 cursor-nwse-resize" },
+  { direction: "sw", className: "bottom-0 left-0 size-4 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize" },
 ];
 
 interface CardRect {
@@ -155,11 +157,24 @@ export function BoardCanvas({
   const abortedDragRef = useRef<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ todoId: string; x: number; y: number } | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
-  const [liveRect, setLiveRect] = useState<(CardRect & { todoId: string }) | null>(null);
+  // vertical：拉的是上下边或角，拉伸中卡片高度就是指针给的高度，放不下的内容先裁掉
+  const [liveRect, setLiveRect] = useState<(CardRect & { todoId: string; vertical: boolean }) | null>(null);
   // 平移每帧都在变，直接改 DOM 不走 React 渲染；zoom 单独存一份给按钮和比例显示用
   const cameraRef = useRef<CanvasCamera>({ x: 0, y: 0, zoom: 1 });
   const [zoom, setZoom] = useState(1);
   const [draft, setDraft] = useState<{ x: number; y: number } | null>(null);
+  // 悬停展开的卡片；同一时间只展开一张，进入别的卡片时上一张立刻收起
+  const [hoveredTodoId, setHoveredTodoId] = useState<string | null>(null);
+  const collapseTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (collapseTimerRef.current !== null) {
+        window.clearTimeout(collapseTimerRef.current);
+      }
+    },
+    [],
+  );
 
   // 还没有位置的 Todo 从左上角开始自动排开，并立即保存，之后位置固定
   useLayoutEffect(() => {
@@ -359,6 +374,44 @@ export function BoardCanvas({
     }
   }
 
+  function cancelCollapse() {
+    if (collapseTimerRef.current !== null) {
+      window.clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = null;
+    }
+  }
+
+  function handleCardEnter(todoId: string) {
+    cancelCollapse();
+    setHoveredTodoId(todoId);
+  }
+
+  function scheduleCollapse(todoId: string) {
+    cancelCollapse();
+    collapseTimerRef.current = window.setTimeout(() => {
+      collapseTimerRef.current = null;
+      setHoveredTodoId((current) => (current === todoId ? null : current));
+    }, CARD_COLLAPSE_DELAY);
+  }
+
+  function handleCardLeave(todoId: string) {
+    // 拖动或缩放中保持展开，松手后再按指针位置决定
+    const drag = dragRef.current;
+    if ((drag?.todoId === todoId && drag.moved) || resizeRef.current?.todoId === todoId) {
+      return;
+    }
+    scheduleCollapse(todoId);
+  }
+
+  // 拖动、缩放松手时指针可能已经在卡片外，而捕获期间收不到离开事件，这里补一次判断
+  function collapseUnlessPointerInside(todoId: string, clientX: number, clientY: number) {
+    const under = document.elementFromPoint?.(clientX, clientY);
+    const item = under instanceof Element ? under.closest("[data-canvas-item]") : null;
+    if (item?.getAttribute("data-canvas-item") !== todoId) {
+      scheduleCollapse(todoId);
+    }
+  }
+
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>, todo: Todo) {
     if (event.button !== 0 || editingTodoId === todo.id) {
       return;
@@ -450,6 +503,7 @@ export function BoardCanvas({
     if (!drag.moved) {
       return;
     }
+    collapseUnlessPointerInside(drag.todoId, event.clientX, event.clientY);
     const point = toWorld(event.clientX, event.clientY);
     const x = snapToCanvasGrid(drag.originX + point.x - drag.startX);
     const y = snapToCanvasGrid(drag.originY + point.y - drag.startY);
@@ -475,6 +529,8 @@ export function BoardCanvas({
       return;
     }
     const start = toWorld(event.clientX, event.clientY);
+    // 起点用屏幕上实际的高度：悬停展开的卡片比保存的高度高，按保存的算，边缘会落后指针一截
+    const renderedHeight = card.getBoundingClientRect().height / cameraRef.current.zoom;
     resizeRef.current = {
       todoId: todo.id,
       direction,
@@ -485,7 +541,7 @@ export function BoardCanvas({
         x: position.x,
         y: position.y,
         width: canvasCardWidth(position),
-        height: position.height ?? card.getBoundingClientRect().height / cameraRef.current.zoom,
+        height: renderedHeight > 0 ? renderedHeight : (position.height ?? CANVAS_MIN_CARD_HEIGHT),
       },
     };
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -520,7 +576,11 @@ export function BoardCanvas({
       return;
     }
     event.stopPropagation();
-    setLiveRect({ todoId: resize.todoId, ...resizedRect(resize, event.clientX, event.clientY) });
+    setLiveRect({
+      todoId: resize.todoId,
+      vertical: resize.direction.includes("n") || resize.direction.includes("s"),
+      ...resizedRect(resize, event.clientX, event.clientY),
+    });
   }
 
   function handleResizeEnd(event: ReactPointerEvent<HTMLDivElement>) {
@@ -531,6 +591,7 @@ export function BoardCanvas({
     event.stopPropagation();
     resizeRef.current = null;
     setLiveRect(null);
+    collapseUnlessPointerInside(resize.todoId, event.clientX, event.clientY);
     const rect = resizedRect(resize, event.clientX, event.clientY);
     const position = positions.get(resize.todoId);
     const horizontal = resize.direction.includes("e") || resize.direction.includes("w");
@@ -603,7 +664,8 @@ export function BoardCanvas({
                 const x = resizing ? resizing.x : dragging ? dragOffset.x : position.x;
                 const y = resizing ? resizing.y : dragging ? dragOffset.y : position.y;
                 const width = resizing ? resizing.width : canvasCardWidth(position);
-                const minHeight = resizing ? resizing.height : (position.height ?? undefined);
+                const height = resizing?.vertical ? resizing.height : undefined;
+                const minHeight = height === undefined ? (position.height ?? undefined) : undefined;
                 const selected = todo.id === selectedTodoId;
                 return (
                   <div
@@ -619,7 +681,10 @@ export function BoardCanvas({
                           : "z-10 hover:z-20",
                       dragging && "cursor-grabbing",
                     )}
-                    style={{ width, minHeight, transform: `translate(${x}px, ${y}px)` }}
+                    style={{ width, height, minHeight, transform: `translate(${x}px, ${y}px)` }}
+                    // 悬停范围是整个外层，伸出卡片的缩放手柄、Bot 标签也算在内
+                    onPointerEnter={() => handleCardEnter(todo.id)}
+                    onPointerLeave={() => handleCardLeave(todo.id)}
                     onPointerDown={(event) => handlePointerDown(event, todo)}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
@@ -633,6 +698,9 @@ export function BoardCanvas({
                       }
                       dragRef.current = null;
                       setDragOffset(null);
+                      if (drag?.moved) {
+                        collapseUnlessPointerInside(drag.todoId, event.clientX, event.clientY);
+                      }
                     }}
                     onLostPointerCapture={(event) => {
                       const drag = dragRef.current;
@@ -654,6 +722,7 @@ export function BoardCanvas({
                     <TodoCard
                       {...cardProps(todo)}
                       variant="canvas"
+                      expanded={hoveredTodoId === todo.id || dragging || Boolean(resizing)}
                       visibleChecklistRows={visibleChecklistRowCount(
                         todo,
                         resizing ? { ...position, width: resizing.width, height: resizing.height } : position,
@@ -670,13 +739,16 @@ export function BoardCanvas({
                             onPointerDown={(event) => handleResizeStart(event, todo, handle.direction)}
                             onPointerMove={handleResizeMove}
                             onPointerUp={handleResizeEnd}
-                            onPointerCancel={() => {
+                            onPointerCancel={(event) => {
                               const resize = resizeRef.current;
                               if (resize) {
                                 logCanvas(`resize abort reason=pointercancel todo=${shortId(resize.todoId)} direction=${resize.direction}`);
                               }
                               resizeRef.current = null;
                               setLiveRect(null);
+                              if (resize) {
+                                collapseUnlessPointerInside(resize.todoId, event.clientX, event.clientY);
+                              }
                             }}
                           />
                         ))}

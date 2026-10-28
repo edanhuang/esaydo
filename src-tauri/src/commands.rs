@@ -17,9 +17,11 @@ use crate::core::skills::{
     SkillInstallLocationStatus,
 };
 use crate::bot_runner;
+use crate::core::bot_agent;
 use crate::core::bot_service::{
     self, ActiveBotRun, Bot, BotConversation, BotInput, BotMessage, DispatchPreview, TodoUnread,
 };
+use crate::core::terminal::{self, TerminalSettings};
 use crate::core::{canvas_service, diagnostics, todo_service, workspace_service};
 use crate::AppState;
 
@@ -356,6 +358,72 @@ pub fn mark_bot_messages_read(
     drop(conn);
     bot_runner::notify_changed(&app);
     Ok(())
+}
+
+/// 在设置里选定的终端 App 里打开 Bot 的会话：写一个可执行脚本交给它运行，不需要控制其他 App 的权限
+#[tauri::command]
+pub fn open_bot_session_in_terminal(
+    state: State<'_, AppState>,
+    todo_id: String,
+    bot_id: String,
+) -> CommandResult<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (location, settings) = {
+        let conn = lock_conn(&state)?;
+        (
+            bot_service::session_location(&conn, &todo_id, &bot_id).map_err(to_string)?,
+            terminal::load(&conn).map_err(to_string)?,
+        )
+    };
+    let app = settings.app.as_str();
+    let installed = ["/Applications", "/System/Applications/Utilities", "/Applications/Utilities"]
+        .iter()
+        .any(|dir| std::path::Path::new(dir).join(terminal::app_bundle(app)).exists());
+    if !installed {
+        return Err(format!("没有找到 {}，请在设置里换一个终端", terminal::app_label(app)));
+    }
+    let dir = state
+        .runs_dir
+        .parent()
+        .map(|parent| parent.join("terminal-scripts"))
+        .unwrap_or_else(|| state.runs_dir.join("terminal-scripts"));
+    std::fs::create_dir_all(&dir).map_err(to_string)?;
+    // 每段会话一个脚本，重复打开就覆盖
+    let script = dir.join(format!("{}.command", location.session_id));
+    std::fs::write(&script, bot_agent::resume_script(&location.provider, &location.cwd, &location.session_id))
+        .map_err(to_string)?;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).map_err(to_string)?;
+    let status = std::process::Command::new("open")
+        .args(terminal::open_args(app, &script))
+        .status()
+        .map_err(to_string)?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("打开 {} 失败", terminal::app_label(app)))
+    }
+}
+
+#[tauri::command]
+pub fn get_terminal_settings(state: State<'_, AppState>) -> CommandResult<TerminalSettings> {
+    let conn = lock_conn(&state)?;
+    terminal::load(&conn).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn save_terminal_settings(
+    state: State<'_, AppState>,
+    settings: TerminalSettings,
+) -> CommandResult<TerminalSettings> {
+    let conn = lock_conn(&state)?;
+    terminal::save(&conn, settings).map_err(to_string)
+}
+
+/// 用户确认「仍然退出」后调用
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 /// 前端画布交互的排查记录，写到 ~/Library/Logs/EasyDo/canvas.log

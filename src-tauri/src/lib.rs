@@ -1,5 +1,6 @@
 mod bot_runner;
 mod commands;
+mod quit_guard;
 pub mod core;
 
 use std::sync::Mutex;
@@ -13,10 +14,13 @@ use tauri::Manager;
 pub struct AppState {
     pub conn: Mutex<Connection>,
     pub runs: bot_runner::RunRegistry,
+    /// Bot 运行的输出文件放这里，和数据库在同一个目录下
+    pub runs_dir: PathBuf,
 }
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let app_data_dir = app
                 .path()
@@ -30,12 +34,18 @@ pub fn run() {
             let mut conn = conn;
             core::todo_service::purge_expired_inbox_todos_now(&mut conn)
                 .map_err(|error| error.to_string())?;
-            // 上次退出时还在跑的 Bot 任务，进程已经没了
-            core::bot_service::mark_interrupted_runs(&mut conn).map_err(|error| error.to_string())?;
+            let runs_dir = database_path
+                .parent()
+                .map(|dir| dir.join("bot-runs"))
+                .unwrap_or_else(|| app_data_dir.join("bot-runs"));
             app.manage(AppState {
                 conn: Mutex::new(conn),
                 runs: bot_runner::RunRegistry::default(),
+                runs_dir,
             });
+            // 上次退出时还标着运行中的 Bot：接回还在后台跑的，同步已经跑完的
+            bot_runner::recover(app.handle().clone());
+            quit_guard::install_menu(app.handle())?;
             thread::spawn(move || loop {
                 thread::sleep(Duration::from_secs(15 * 60));
                 if let Ok(mut conn) = core::db::open_database(&database_path) {
@@ -44,8 +54,21 @@ pub fn run() {
             });
             Ok(())
         })
+        // 关窗口等同于退出：有 Bot 在跑时先拦下，交给前端确认
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if quit_guard::running_count(window.app_handle()) > 0 {
+                    api.prevent_close();
+                    quit_guard::request_quit(window.app_handle());
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::append_canvas_log,
+            commands::quit_app,
+            commands::open_bot_session_in_terminal,
+            commands::get_terminal_settings,
+            commands::save_terminal_settings,
             commands::choose_bot_directory,
             commands::count_bot_messages,
             commands::create_bot,
@@ -98,12 +121,7 @@ pub fn run() {
             commands::set_todo_suspended,
             commands::update_todo_detail,
         ])
-        .build(tauri::generate_context!())
-        .expect("failed to build EasyDo")
-        .run(|app, event| {
-            // 退出时结束所有 Bot 进程；数据库里的运行记录下次启动时标记为已中断
-            if let tauri::RunEvent::Exit = event {
-                app.state::<AppState>().runs.stop_all();
-            }
-        });
+        // 退出时不结束 Bot：它们在后台继续跑完，下次启动时同步结果
+        .run(tauri::generate_context!())
+        .expect("failed to run EasyDo");
 }

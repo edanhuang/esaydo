@@ -240,14 +240,15 @@ export function BoardPage({
       nextInboxCount,
     );
     const selectedView = nextBoardViews[selectedIndex];
+    // 视图列表一到就定下当前视图：等 Todo 拉回来再定的话，这段时间里「当前视图」还是第一个视图，
+    // 期间触发的刷新（例如 Bot 状态变化）会拉错视图的 Todo
+    setCurrentGroupIndex(0);
+    setCurrentBoardViewIndex(selectedIndex);
     await loadTodosForView(selectedView?.id);
     if (selectedView && savedBoardViewId && selectedView.id !== savedBoardViewId) {
       await saveSelectedBoardViewId(selectedView.id);
     }
     setLoading(false);
-
-    setCurrentGroupIndex(0);
-    setCurrentBoardViewIndex(selectedIndex);
   }, [loadTodosForView]);
 
   useEffect(() => {
@@ -275,12 +276,15 @@ export function BoardPage({
     await loadTodosForView(currentBoardView?.id);
   }, [currentBoardView?.id, loadTodosForView]);
 
-  // Bot 运行结束时可能用 easydo update 改过 Todo，跟着刷新
+  // Bot 运行结束时可能用 easydo update 改过 Todo，跟着刷新。
+  // 看板首次加载完成前不刷新：那时当前视图可能还没定，刷新会拉错视图的 Todo，盖掉正确的列表
   const { version: botActivityVersion } = useBotActivity();
   const refreshTodosRef = useRef(refreshTodosForCurrentView);
   refreshTodosRef.current = refreshTodosForCurrentView;
+  const viewReadyRef = useRef(false);
+  viewReadyRef.current = !loading && Boolean(currentBoardView?.id);
   useEffect(() => {
-    if (botActivityVersion > 0) {
+    if (botActivityVersion > 0 && viewReadyRef.current) {
       void refreshTodosRef.current();
     }
   }, [botActivityVersion]);

@@ -29,9 +29,11 @@ import {
   chooseSkillInstallDirectory,
   getCliInstallStatus,
   getSkillInstallStatuses,
+  getTerminalSettings,
   installCliTool,
   installSkillToTarget,
   listAvailableSkills,
+  saveTerminalSettings,
 } from "@/lib/api";
 import type {
   AppearanceSettings,
@@ -39,8 +41,18 @@ import type {
   ShortcutSettings,
   SkillDefinition,
   SkillInstallLocationStatus,
+  TerminalApp,
+  TerminalSettings,
   ThemeMode,
 } from "@/types";
+
+const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = { version: 1, app: "terminal" };
+
+const TERMINAL_OPTIONS: Array<{ value: TerminalApp; label: string }> = [
+  { value: "terminal", label: "终端" },
+  { value: "ghostty", label: "Ghostty" },
+  { value: "iterm2", label: "iTerm2" },
+];
 
 const CUSTOM_SKILL_ROOTS_STORAGE_KEY = "easydo.skill.customRoots.v1";
 const defaultSkillTargets = ["agents", "codex", "claude"] as const;
@@ -83,6 +95,7 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const [shortcutDraft, setShortcutDraft] = useState(shortcutSettings);
   const [appearanceDraft, setAppearanceDraft] = useState(appearanceSettings);
+  const [terminalDraft, setTerminalDraft] = useState<TerminalSettings>(DEFAULT_TERMINAL_SETTINGS);
   const [capturingAction, setCapturingAction] = useState<ShortcutAction | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -100,6 +113,11 @@ export function SettingsDialog({
     if (open) {
       setShortcutDraft(shortcutSettings);
       setAppearanceDraft(appearanceSettings);
+      // 读不到（例如不在 Tauri 里）就用默认的「终端」
+      Promise.resolve()
+        .then(() => getTerminalSettings())
+        .then(setTerminalDraft)
+        .catch(() => setTerminalDraft(DEFAULT_TERMINAL_SETTINGS));
       setErrors([]);
       setCapturingAction(null);
       setCliLoading(true);
@@ -181,6 +199,7 @@ export function SettingsDialog({
       await Promise.all([
         onSaveShortcuts(shortcutDraft),
         onSaveAppearance(appearanceDraft),
+        saveTerminalSettings(terminalDraft),
       ]);
       onOpenChange(false);
     } finally {
@@ -281,6 +300,32 @@ export function SettingsDialog({
                 className="rounded border border-easydo-borderSoft bg-easydo-bgSoft p-0.5"
               >
                 {themeModeOptions.map((option) => (
+                  <ToggleGroupItem
+                    key={option.value}
+                    value={option.value}
+                    className="h-6 rounded px-2.5 text-xs text-easydo-textMuted hover:bg-transparent hover:text-easydo-cream data-[state=on]:bg-easydo-surface data-[state=on]:text-easydo-cream data-[state=on]:shadow-easydo-lavender"
+                  >
+                    {option.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </SettingsRow>
+          </SettingsSection>
+
+          <SettingsSection title="Bot">
+            <SettingsRow label="终端" description="在消息里点「在终端打开」时用哪个终端打开会话">
+              <ToggleGroup
+                type="single"
+                aria-label="打开会话的终端"
+                value={terminalDraft.app}
+                onValueChange={(value) => {
+                  if (value) {
+                    setTerminalDraft({ version: 1, app: value as TerminalApp });
+                  }
+                }}
+                className="rounded border border-easydo-borderSoft bg-easydo-bgSoft p-0.5"
+              >
+                {TERMINAL_OPTIONS.map((option) => (
                   <ToggleGroupItem
                     key={option.value}
                     value={option.value}
@@ -462,6 +507,7 @@ export function SettingsDialog({
             onClick={() => {
               setShortcutDraft(defaultShortcutSettings);
               setAppearanceDraft(defaultAppearanceSettings);
+              setTerminalDraft(DEFAULT_TERMINAL_SETTINGS);
               setErrors([]);
               setCapturingAction(null);
             }}

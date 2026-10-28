@@ -7,6 +7,7 @@ import type {
   BotInput,
   BotMessage,
   DispatchPreview,
+  TerminalSettings,
   TodoUnread,
   BoardLayoutMode,
   CanvasPosition,
@@ -225,6 +226,19 @@ export function stopBotRun(todoId: string, botId: string): Promise<void> {
   return invoke("stop_bot_run", { todoId, botId });
 }
 
+export function getTerminalSettings(): Promise<TerminalSettings> {
+  return invoke("get_terminal_settings");
+}
+
+export function saveTerminalSettings(settings: TerminalSettings): Promise<TerminalSettings> {
+  return invoke("save_terminal_settings", { settings });
+}
+
+/** 在设置里选定的终端 App 里进入 Bot 的工作目录，用 resume 打开这段会话 */
+export function openBotSessionInTerminal(todoId: string, botId: string): Promise<void> {
+  return invoke("open_bot_session_in_terminal", { todoId, botId });
+}
+
 export function listActiveBotRuns(): Promise<ActiveBotRun[]> {
   return invoke("list_active_bot_runs");
 }
@@ -248,4 +262,13 @@ export function markBotMessagesRead(todoId: string, botId: string): Promise<void
 /** Bot 开始、结束运行或消息已读时触发；返回取消监听的函数 */
 export function onBotRunsChanged(handler: () => void): Promise<() => void> {
   return listen("bot-runs-changed", handler);
+}
+
+/** 有 Bot 在运行时按 ⌘Q 或关窗口，后端先发这个事件让前端确认；参数是运行中的 Bot 数 */
+export function onConfirmQuit(handler: (runningCount: number) => void): Promise<() => void> {
+  return listen<number>("confirm-quit", (event) => handler(event.payload));
+}
+
+export function quitApp(): Promise<void> {
+  return invoke("quit_app");
 }

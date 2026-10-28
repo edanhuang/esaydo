@@ -329,6 +329,22 @@ fn session_running(conn: &Connection, session_ref: &str) -> Result<bool> {
     )?)
 }
 
+/// 在终端里接着这段会话需要的信息：用哪个 AI、在哪个目录、会话 ID
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionLocation {
+    pub provider: String,
+    pub cwd: String,
+    pub session_id: String,
+}
+
+pub fn session_location(conn: &Connection, todo_id: &str, bot_id: &str) -> Result<SessionLocation> {
+    let session = find_session(conn, todo_id, bot_id)?.ok_or_else(|| EasyDoError::not_found("还没有这段会话"))?;
+    let session_id = session
+        .session_id
+        .ok_or_else(|| EasyDoError::invalid_state("这段会话还没有会话 ID，Bot 跑起来后再试"))?;
+    Ok(SessionLocation { provider: session.provider, cwd: session.cwd, session_id })
+}
+
 pub fn dispatch_preview(conn: &Connection, todo_id: &str, bot_id: &str) -> Result<DispatchPreview> {
     let bot = get_bot(conn, bot_id)?;
     let Some(session) = find_session(conn, todo_id, bot_id)? else {
@@ -522,6 +538,9 @@ pub fn finish_run(conn: &mut Connection, finished: &FinishedRun) -> Result<()> {
             let error = finished.error.as_deref().unwrap_or("未知错误");
             insert_message(&tx, &finished.session_ref, Some(&finished.run_id), "system", &format!("运行失败：{error}"), &now, false)?;
         }
+        "interrupted" => {
+            insert_message(&tx, &finished.session_ref, Some(&finished.run_id), "system", "任务中途中断了，可以接着派发继续。", &now, false)?;
+        }
         // 手动停止不产生消息
         _ => {}
     }
@@ -529,26 +548,140 @@ pub fn finish_run(conn: &mut Connection, finished: &FinishedRun) -> Result<()> {
     Ok(())
 }
 
-/// App 启动时：上次退出时还在跑的任务标记为已中断
-pub fn mark_interrupted_runs(conn: &mut Connection) -> Result<usize> {
-    let tx = conn.transaction()?;
-    let now = now_iso();
-    let sessions = {
-        let mut stmt = tx.prepare("SELECT id, session_ref FROM bot_runs WHERE status = 'running'")?;
+/// 运行结束后发给 macOS 的通知内容
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunNotice {
+    pub title: String,
+    pub body: String,
+}
+
+const NOTICE_PREVIEW_CHARS: usize = 80;
+
+/// 回复了、失败了才通知；手动停止是自己点的，中断只在启动恢复时出现，都不打扰
+pub fn run_notice(conn: &Connection, finished: &FinishedRun) -> Result<Option<RunNotice>> {
+    let found = conn
+        .query_row(
+            r#"
+            SELECT b.name, t.detail
+            FROM bot_sessions s
+            JOIN bots b ON b.id = s.bot_id
+            JOIN todos t ON t.id = s.todo_id
+            WHERE s.id = ?1
+            "#,
+            params![finished.session_ref],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    let Some((bot_name, todo_detail)) = found else {
+        return Ok(None);
+    };
+    let headline = todo_detail.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or("").to_string();
+    let reply = finished.final_text.as_deref().map(plain_preview).filter(|text| !text.is_empty());
+    let notice = match (finished.status.as_str(), reply) {
+        ("completed", Some(reply)) => RunNotice { title: format!("{bot_name} 回复了"), body: format!("{headline}\n{reply}") },
+        ("completed", None) => RunNotice { title: format!("{bot_name} 处理完了"), body: headline },
+        ("failed", _) => {
+            let error = plain_preview(finished.error.as_deref().unwrap_or("未知错误"));
+            RunNotice { title: format!("{bot_name} 运行失败"), body: format!("{headline}\n{error}") }
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(notice))
+}
+
+/// 通知里只放一小段纯文本：去掉常见的 Markdown 记号，空白合成一个空格，过长截断
+fn plain_preview(text: &str) -> String {
+    let plain = text
+        .lines()
+        .map(|line| line.trim().trim_start_matches(['#', '>', '-', '*', ' ']).trim())
+        .filter(|line| !line.is_empty() && !line.starts_with("```"))
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace(['*', '`'], "");
+    let plain = plain.split_whitespace().collect::<Vec<_>>().join(" ");
+    if plain.chars().count() > NOTICE_PREVIEW_CHARS {
+        format!("{}…", plain.chars().take(NOTICE_PREVIEW_CHARS).collect::<String>())
+    } else {
+        plain
+    }
+}
+
+/// 进程起来后记下 pid、进程启动时间（防止 pid 被别的程序复用）和输出文件
+pub fn record_process(
+    conn: &Connection,
+    run_id: &str,
+    pid: u32,
+    process_started: Option<&str>,
+    output_path: &str,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE bot_runs SET pid = ?1, process_started = ?2, output_path = ?3 WHERE id = ?4",
+        params![pid, process_started, output_path, run_id],
+    )?;
+    Ok(())
+}
+
+/// App 启动时还标着「运行中」的任务：可能 Bot 还在后台跑，也可能已经跑完或中途死掉
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecoverableRun {
+    pub run: PreparedRun,
+    pub pid: Option<u32>,
+    pub process_started: Option<String>,
+    pub output_path: Option<String>,
+}
+
+pub fn list_recoverable_runs(conn: &Connection) -> Result<Vec<RecoverableRun>> {
+    let rows = {
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT r.id, r.session_ref, r.pid, r.process_started, r.output_path,
+                   s.todo_id, s.bot_id, s.cwd, s.session_id, s.usage_totals, t.detail
+            FROM bot_runs r
+            JOIN bot_sessions s ON s.id = r.session_ref
+            JOIN todos t ON t.id = s.todo_id
+            WHERE r.status = 'running'
+            ORDER BY r.started_at
+            "#,
+        )?;
         let rows = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, Option<String>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, String>(10)?,
+                ))
+            })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         rows
     };
-    for (run_id, session_ref) in &sessions {
-        tx.execute(
-            "UPDATE bot_runs SET status = 'interrupted', finished_at = ?1 WHERE id = ?2",
-            params![now, run_id],
-        )?;
-        insert_message(&tx, session_ref, Some(run_id), "system", "EasyDo 退出时任务被中断，可以接着派发继续。", &now, false)?;
+    let mut runs = Vec::new();
+    for (run_id, session_ref, pid, process_started, output_path, todo_id, bot_id, cwd, session_id, usage_totals, detail) in rows {
+        runs.push(RecoverableRun {
+            run: PreparedRun {
+                run_id,
+                session_ref,
+                todo_id,
+                todo_detail: detail,
+                bot: get_bot(conn, &bot_id)?,
+                cwd,
+                resume_session_id: session_id,
+                usage_totals,
+                instruction: String::new(),
+            },
+            pid: pid.and_then(|pid| u32::try_from(pid).ok()),
+            process_started,
+            output_path,
+        });
     }
-    tx.commit()?;
-    Ok(sessions.len())
+    Ok(runs)
 }
 
 pub fn list_active_runs(conn: &Connection) -> Result<Vec<ActiveBotRun>> {
@@ -831,13 +964,75 @@ mod tests {
     }
 
     #[test]
-    fn interrupted_runs_are_closed_on_startup() {
+    fn running_runs_can_be_recovered_after_restart() {
         let mut conn = test_database();
         let (todo_id, bot, _dir) = setup(&mut conn);
-        prepare_run(&mut conn, &todo_id, &bot.id, "").expect("run");
-        assert_eq!(mark_interrupted_runs(&mut conn).expect("mark"), 1);
+        let run = prepare_run(&mut conn, &todo_id, &bot.id, "").expect("run");
+        record_session_id(&conn, &run.session_ref, "sess-9").expect("session");
+        record_process(&conn, &run.run_id, 4321, Some("Wed Oct 28 17:30:01 2026"), "/runs/a.jsonl").expect("process");
+
+        let recoverable = list_recoverable_runs(&conn).expect("recoverable");
+        assert_eq!(recoverable.len(), 1);
+        assert_eq!(recoverable[0].pid, Some(4321));
+        assert_eq!(recoverable[0].output_path.as_deref(), Some("/runs/a.jsonl"));
+        assert_eq!(recoverable[0].run.resume_session_id.as_deref(), Some("sess-9"));
+        assert_eq!(recoverable[0].run.bot.id, bot.id);
+
+        // 进程不在了、输出里也没有结束事件：记为中断，发一条未读提示
+        let finished = FinishedRun {
+            run_id: run.run_id.clone(),
+            session_ref: run.session_ref.clone(),
+            status: "interrupted".to_string(),
+            usage: RunUsage::default(),
+            error: None,
+            final_text: None,
+            session_id: None,
+            title: None,
+            usage_totals: None,
+        };
+        finish_run(&mut conn, &finished).expect("finish");
         assert!(list_active_runs(&conn).expect("active").is_empty());
         assert_eq!(list_unread_by_todo(&conn).expect("unread")[0].count, 1);
+        assert!(list_recoverable_runs(&conn).expect("recoverable").is_empty());
+    }
+
+    #[test]
+    fn notices_replies_and_failures_but_not_stops() {
+        let mut conn = test_database();
+        let (todo_id, bot, _dir) = setup(&mut conn);
+        let run = prepare_run(&mut conn, &todo_id, &bot.id, "").expect("run");
+        let mut finished = FinishedRun {
+            run_id: run.run_id.clone(),
+            session_ref: run.session_ref.clone(),
+            status: "completed".to_string(),
+            usage: RunUsage::default(),
+            error: None,
+            final_text: Some("## 结果\n- 已汇总 **12** 小时\n```\ncode\n```".to_string()),
+            session_id: None,
+            title: None,
+            usage_totals: None,
+        };
+        assert_eq!(
+            run_notice(&conn, &finished).expect("notice"),
+            Some(RunNotice { title: "周报助手 回复了".to_string(), body: "整理周报\n结果 已汇总 12 小时 code".to_string() })
+        );
+
+        finished.final_text = Some("长".repeat(100));
+        let body = run_notice(&conn, &finished).expect("notice").expect("some").body;
+        assert!(body.ends_with('…'));
+        assert_eq!(body.lines().nth(1).expect("preview").chars().count(), NOTICE_PREVIEW_CHARS + 1);
+
+        finished.status = "failed".to_string();
+        finished.error = Some("额度用完了".to_string());
+        assert_eq!(
+            run_notice(&conn, &finished).expect("notice"),
+            Some(RunNotice { title: "周报助手 运行失败".to_string(), body: "整理周报\n额度用完了".to_string() })
+        );
+
+        for status in ["stopped", "interrupted"] {
+            finished.status = status.to_string();
+            assert_eq!(run_notice(&conn, &finished).expect("notice"), None);
+        }
     }
 
     #[test]
