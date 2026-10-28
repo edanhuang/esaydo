@@ -189,30 +189,30 @@
 
 .dark {
   --background: 20 8% 7.5%;
-  --foreground: 40 27% 93%;
+  --foreground: 40 18% 85%;
   --card: 30 6% 12%;
-  --card-foreground: 40 27% 93%;
+  --card-foreground: 40 18% 85%;
   --popover: 30 6% 12%;
-  --popover-foreground: 40 27% 93%;
-  --primary: 40 27% 93%;
+  --popover-foreground: 40 18% 85%;
+  --primary: 40 18% 85%;
   --primary-foreground: 20 8% 7.5%;
   --secondary: 30 7% 6%;
-  --secondary-foreground: 38 10% 79%;
+  --secondary-foreground: 38 8% 72%;
   --muted: 30 6% 12%;
   --muted-foreground: 34 6% 58%;
   --accent: 30 5% 14.5%;
-  --accent-foreground: 40 27% 93%;
+  --accent-foreground: 40 18% 85%;
   --destructive: 8 70% 62%;
   --destructive-foreground: 20 8% 7.5%;
   --border: 36 5% 18%;
   --input: 36 5% 18%;
   --ring: 17 70% 59%;
   --sidebar: 30 7% 6%;
-  --sidebar-foreground: 40 27% 93%;
-  --sidebar-primary: 40 27% 93%;
+  --sidebar-foreground: 40 18% 85%;
+  --sidebar-primary: 40 18% 85%;
   --sidebar-primary-foreground: 20 8% 7.5%;
   --sidebar-accent: 36 5% 17%;
-  --sidebar-accent-foreground: 40 27% 93%;
+  --sidebar-accent-foreground: 40 18% 85%;
   --sidebar-border: 36 5% 18%;
   --sidebar-ring: 17 70% 59%;
 
@@ -222,9 +222,9 @@
   --easydo-surface-warm: 20 6% 9%;
   --easydo-surface-hover: 30 5% 14.5%;
   --easydo-surface-active: 36 5% 17%;
-  --easydo-cream: 40 27% 93%;
-  --easydo-text: 40 27% 93%;
-  --easydo-text-secondary: 38 10% 79%;
+  --easydo-cream: 40 18% 85%;
+  --easydo-text: 40 18% 85%;
+  --easydo-text-secondary: 38 8% 72%;
   --easydo-text-muted: 34 6% 58%;
   --easydo-text-disabled: 34 5% 38%;
   --easydo-gold: 17 70% 59%;
