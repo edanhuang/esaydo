@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use chrono::{DateTime, FixedOffset, Local, SecondsFormat, TimeZone, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 
+use super::bot_service;
 use super::db::{new_id, now_iso};
 use super::error::{EasyDoError, Result};
 use super::models::{
@@ -419,6 +420,7 @@ pub fn complete_todo(conn: &mut Connection, id: &str) -> Result<TodoWithRelation
         "active" => {}
         _ => return Err(EasyDoError::invalid_state("Todo 状态无效")),
     }
+    bot_service::ensure_no_running_run(conn, id)?;
     let tx = conn.transaction()?;
     let now = now_iso();
     tx.execute(
@@ -459,6 +461,7 @@ pub fn archive_todo(conn: &mut Connection, id: &str) -> Result<TodoWithRelations
     if todo.status == "archived" {
         return get_todo_with_relations(conn, id);
     }
+    bot_service::ensure_no_running_run(conn, id)?;
     let tx = conn.transaction()?;
     let now = now_iso();
     tx.execute(
@@ -923,8 +926,7 @@ mod tests {
         let third = create_work_todo(&mut conn, "第三条");
         assert_eq!(second.suspended_at, None);
 
-        let suspended =
-            set_todo_suspended(&mut conn, &second.id, true).expect("suspend todo");
+        let suspended = set_todo_suspended(&mut conn, &second.id, true).expect("suspend todo");
         assert!(suspended.suspended_at.is_some());
         assert_eq!(suspended.updated_at, second.updated_at);
         assert_eq!(suspended.group_sort_orders, second.group_sort_orders);

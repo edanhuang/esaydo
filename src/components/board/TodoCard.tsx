@@ -1,15 +1,20 @@
 import { useEffect, useLayoutEffect, useRef, type CSSProperties } from "react";
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
-import { Archive, Check, CirclePause, CirclePlay, GripVertical } from "lucide-react";
-import highPriorityIcon from "@/assets/high-level.png";
+import { Archive, Bot as BotIcon, Check, CircleCheck, CirclePause, CirclePlay, CircleStop, Flag, GripVertical, Plus, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { BotAvatar, UnreadBadge } from "@/components/bots/BotAvatar";
+import { useBotActivity } from "@/components/bots/BotActivity";
 import { Textarea } from "@/components/ui/textarea";
 import { parseChecklistLine, toggleChecklistLineAtIndex } from "@/lib/checklist";
 import { cn } from "@/lib/utils";
@@ -17,6 +22,10 @@ import type { Todo, TodoPriority } from "../../types";
 
 interface TodoCardProps {
   todo: Todo;
+  /** list：分组列里的行；canvas：画布上的紧凑卡片 */
+  variant?: "list" | "canvas";
+  /** 画布卡片拉高后默认显示的子项条数，其余悬停时展开 */
+  visibleChecklistRows?: number;
   selected: boolean;
   editing: boolean;
   editingValue: string;
@@ -42,8 +51,14 @@ interface TodoCardProps {
   onSetSuspended: (suspended: boolean) => void;
 }
 
+// 高优 Todo 叠一层很浅的重点色；用渐变叠在原底色上，不替换底色本身，列表的悬停/选中底色也照常生效
+const HIGH_PRIORITY_TINT =
+  "[background-image:linear-gradient(hsl(var(--easydo-gold)/0.07),hsl(var(--easydo-gold)/0.07))]";
+
 export function TodoCard({
   todo,
+  variant = "list",
+  visibleChecklistRows = 0,
   selected,
   editing,
   editingValue,
@@ -70,6 +85,10 @@ export function TodoCard({
   const done = todo.status === "done";
   const highPriority = todo.priority === "high";
   const suspended = todo.suspendedAt !== null;
+  const canvas = variant === "canvas";
+  const { bots, runningBotFor, unreadFor, requestDispatch, stop, openMessages, openBotsPage } = useBotActivity();
+  const runningBot = runningBotFor(todo.id);
+  const unread = unreadFor(todo.id);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isComposingRef = useRef(false);
   const selectionAfterToggleRef = useRef<{ start: number; end: number } | null>(null);
@@ -194,7 +213,6 @@ export function TodoCard({
       <ContextMenuTrigger asChild>
         <article
           ref={onSortableNode}
-          style={sortableStyle}
           data-todo-card
           data-priority={todo.priority}
           data-suspended={suspended || undefined}
@@ -206,31 +224,52 @@ export function TodoCard({
             event.stopPropagation();
             onStartEditing();
           }}
+          data-bot-running={runningBot ? runningBot.id : undefined}
+          // 画布上 Bot 运行中时，卡片投影换成 Bot 的颜色
+          style={
+            canvas && runningBot
+              ? ({
+                  ...sortableStyle,
+                  "--bot-color": `var(--bot-${runningBot.color})`,
+                  boxShadow: "0 0 0 1px hsl(var(--bot-color) / 0.35), 0 4px 14px hsl(var(--bot-color) / 0.32)",
+                } as CSSProperties)
+              : sortableStyle
+          }
           className={cn(
-            "group relative flex w-full items-center gap-2.5 py-1.5 pl-px pr-2 text-left transition-colors duration-150 ease-out",
-            selected
-              ? "bg-easydo-surfaceActive"
-              : "bg-transparent hover:bg-easydo-surfaceHover",
-            done && "text-easydo-textMuted opacity-60",
-            dragging && "opacity-35",
+            canvas
+              ? cn(
+                  "group relative w-full flex-1 cursor-grab select-none rounded-[4px] border bg-[hsl(var(--easydo-surface)/0.82)] px-2 py-1.5 text-left transition-[border-color,box-shadow,opacity] duration-200 ease-out active:cursor-grabbing",
+                  // 编辑中不显示选中描边，卡片外观保持不变，只多一个光标
+                  selected && !editing
+                    ? "border-easydo-gold"
+                    : "border-easydo-border hover:border-[hsl(var(--easydo-text-muted)/0.45)]",
+                  // 悬停时投影渐入渐出；高优已有重点色底，投影收小一档
+                  !dragging && (highPriority ? "hover:shadow-easydo-card-hover-soft" : "hover:shadow-easydo-card-hover"),
+                  done && "opacity-60",
+                  dragging && "shadow-easydo-card",
+                  highPriority && HIGH_PRIORITY_TINT,
+                )
+              : cn(
+                  "group relative grid w-full grid-cols-[16px_18px_minmax(0,1fr)_auto] items-start gap-x-2 rounded-lg py-2 pl-0.5 pr-1.5 text-left transition-colors duration-200 ease-out",
+                  // 行间分隔线：从正文开始、右侧留空，不是整条底线；列表最后一行由容器隐藏
+                  "after:pointer-events-none after:absolute after:-bottom-px after:left-[46px] after:right-3 after:h-px after:bg-easydo-borderSoft",
+                  selected
+                    ? "bg-easydo-surfaceActive"
+                    : highPriority
+                      ? "bg-transparent hover:bg-[hsl(var(--easydo-surface-hover)/0.3)]"
+                      : "bg-transparent hover:bg-[hsl(var(--easydo-surface-hover)/0.55)]",
+                  done && "text-easydo-textMuted",
+                  dragging && "opacity-35",
+                  highPriority && HIGH_PRIORITY_TINT,
+                ),
           )}
         >
-          {highPriority ? (
-            <span
-              title="高优"
-              className="pointer-events-none absolute left-0.5 top-0.5 block size-3.5"
-            >
-              <img src={highPriorityIcon} alt="" aria-hidden className="size-full" />
-              <span className="sr-only">高优</span>
-            </span>
-          ) : null}
-
-          {dragHandleAttributes ? (
+          {canvas ? null : dragHandleAttributes ? (
             <button
               ref={onDragHandleNode}
               type="button"
               title="拖拽排序"
-              className="grid size-4 shrink-0 cursor-grab place-items-center text-easydo-textMuted opacity-0 transition hover:bg-easydo-surfaceActive hover:text-easydo-cream active:cursor-grabbing group-hover:opacity-100 group-focus-within:opacity-100"
+              className="mt-0.5 grid size-4 shrink-0 cursor-grab place-items-center rounded text-easydo-textMuted opacity-0 transition-opacity hover:text-easydo-cream active:cursor-grabbing group-hover:opacity-100 group-focus-within:opacity-100"
               onClick={(event) => event.stopPropagation()}
               {...dragHandleAttributes}
               {...dragHandleListeners}
@@ -242,16 +281,19 @@ export function TodoCard({
             <span aria-hidden className="size-4 shrink-0" />
           )}
 
+          {canvas ? null : runningBot ? (
+            <span className="mt-px grid size-[18px] place-items-center">
+              <BotAvatar color={runningBot.color} running title={`${runningBot.name} 运行中`} />
+            </span>
+          ) : (
           <button
             type="button"
             title={done ? "取消完成" : "完成"}
             className={cn(
-              "grid size-5 shrink-0 place-items-center rounded-full border transition hover:border-easydo-gold hover:bg-easydo-gold/15",
+              "mt-px grid size-[18px] shrink-0 place-items-center rounded-full border-[1.5px] transition-colors duration-150 hover:border-easydo-gold hover:bg-easydo-goldSoft",
               done
-                ? "border-easydo-gold bg-easydo-gold text-primary-foreground shadow-easydo-glow"
-                : selected
-                  ? "border-easydo-gold bg-easydo-gold/15"
-                  : "border-easydo-border bg-easydo-bgSoft",
+                ? "border-easydo-gold bg-easydo-gold text-easydo-onAccent"
+                : "border-easydo-textMuted bg-transparent",
             )}
             onClick={(event) => {
               event.stopPropagation();
@@ -262,9 +304,10 @@ export function TodoCard({
               }
             }}
           >
-            {done ? <Check className="size-3.5" /> : null}
+            {done ? <Check className="size-3" strokeWidth={3} /> : null}
             <span className="sr-only">{done ? "取消完成" : "完成"}</span>
           </button>
+          )}
 
           {editing ? (
             <div
@@ -291,7 +334,8 @@ export function TodoCard({
                 onBlur={onBlurEditing}
                 aria-invalid={Boolean(editingError)}
                 rows={1}
-                className="min-h-11 resize-none overflow-hidden rounded-none border-easydo-gold/50 bg-easydo-bgSoft text-easydo-cream shadow-easydo-glow"
+                // 编辑时不加输入框外观，看起来只是卡片上多了一个光标
+                className="block min-h-0 resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 text-sm text-easydo-cream shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent md:text-sm"
               />
               {editingError ? (
                 <p role="alert" className="mt-1 text-xs text-destructive">
@@ -303,36 +347,83 @@ export function TodoCard({
             <TodoDetailLines
               detail={todo.detail}
               done={done}
+              highPriority={highPriority}
+              revealOnHover={canvas && !selected}
+              pinnedChecklistRows={visibleChecklistRows}
+              compact={canvas}
               onToggleChecklistLine={onToggleChecklistLine}
             />
           )}
 
-          <span className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              title="归档"
-              className="text-easydo-textMuted hover:bg-easydo-surfaceActive hover:text-easydo-danger"
-              onClick={(event) => {
-                event.stopPropagation();
-                onArchive();
-              }}
-            >
-              <Archive data-icon="inline-start" />
-              <span className="sr-only">归档</span>
-            </Button>
+          {canvas ? null : (
+          <span className="-my-1 flex shrink-0 items-center gap-1">
+            {/* 操作按钮区：悬停才显示，固定占一个按钮宽，正文不会因悬停重排；按钮多了向左展开 */}
+            <span data-row-actions className="relative size-7 shrink-0">
+              <span className="absolute inset-y-0 right-0 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                {/* Bot 运行中不能归档，按钮区留空但仍占位 */}
+                {runningBot ? null : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    title="归档"
+                    className="rounded-md text-easydo-textMuted hover:bg-easydo-surfaceActive hover:text-easydo-danger"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onArchive();
+                    }}
+                  >
+                    <Archive data-icon="inline-start" />
+                    <span className="sr-only">归档</span>
+                  </Button>
+                )}
+              </span>
+            </span>
+            {/* 有未读时信封常驻最右 */}
+            {unread ? (
+              <UnreadBadge count={unread.count} onClick={() => openMessages({ todoId: todo.id, botId: unread.botId })} />
+            ) : null}
           </span>
+          )}
         </article>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        <ContextMenuGroup>
+          {runningBot ? (
+            <ContextMenuItem onSelect={() => stop(todo.id)}>
+              <CircleStop />
+              停止 {runningBot.name}
+            </ContextMenuItem>
+          ) : (
+            <ContextMenuSub>
+              <ContextMenuSubTrigger disabled={todo.status !== "active"}>
+                <BotIcon />
+                派发给 Bot
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                {bots.map((bot) => (
+                  <ContextMenuItem key={bot.id} onSelect={() => requestDispatch(todo, bot)}>
+                    <BotAvatar color={bot.color} className="size-4 rounded-[4px] [&_svg]:size-3" />
+                    {bot.name}
+                  </ContextMenuItem>
+                ))}
+                {bots.length > 0 ? <ContextMenuSeparator /> : null}
+                <ContextMenuItem onSelect={openBotsPage}>
+                  <Plus />
+                  新建 Bot…
+                </ContextMenuItem>
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          )}
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem
             onSelect={() => {
               onSetPriority(highPriority ? "normal" : "high");
             }}
           >
-            <img src={highPriorityIcon} alt="" aria-hidden className="size-4" />
+            <Flag className="text-easydo-gold" />
             {highPriority ? "取消高优" : "标记高优"}
           </ContextMenuItem>
           <ContextMenuItem
@@ -344,6 +435,22 @@ export function TodoCard({
             {suspended ? "取消挂起" : "挂起"}
           </ContextMenuItem>
         </ContextMenuGroup>
+        {canvas ? (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuGroup>
+              {/* Bot 执行中不允许完成或归档 */}
+              <ContextMenuItem disabled={Boolean(runningBot)} onSelect={() => (done ? onReopen() : onComplete())}>
+                {done ? <RotateCcw /> : <CircleCheck />}
+                {done ? "取消完成" : "完成"}
+              </ContextMenuItem>
+              <ContextMenuItem variant="destructive" disabled={Boolean(runningBot)} onSelect={onArchive}>
+                <Archive />
+                归档
+              </ContextMenuItem>
+            </ContextMenuGroup>
+          </>
+        ) : null}
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -352,49 +459,99 @@ export function TodoCard({
 interface TodoDetailLinesProps {
   detail: string;
   done: boolean;
+  highPriority: boolean;
+  /** 画布上未选中的卡片：平时只显示正文，鼠标悬停在卡片上时展开子项 */
+  revealOnHover?: boolean;
+  /** 悬停展开模式下仍然默认显示的前几条子项 */
+  pinnedChecklistRows?: number;
+  /** 画布卡片：字号更小，文字不可选，整张卡都能拖动 */
+  compact?: boolean;
   onToggleChecklistLine: (lineIndex: number) => void;
 }
 
-function TodoDetailLines({ detail, done, onToggleChecklistLine }: TodoDetailLinesProps) {
+function PriorityFlag() {
+  return (
+    <span title="高优" className="mr-1 inline-flex align-[-2px] text-easydo-gold">
+      <Flag className="size-3.5" strokeWidth={2.4} />
+      <span className="sr-only">高优</span>
+    </span>
+  );
+}
+
+function TodoDetailLines({
+  detail,
+  done,
+  highPriority,
+  revealOnHover = false,
+  pinnedChecklistRows = 0,
+  compact = false,
+  onToggleChecklistLine,
+}: TodoDetailLinesProps) {
   const detailClassName = cn(
-    "min-w-0 flex-1 cursor-text select-text whitespace-pre-wrap break-words text-sm font-normal leading-5 text-easydo-cream",
+    "min-w-0 whitespace-pre-wrap break-words font-normal text-easydo-cream",
+    compact ? "block text-sm" : "cursor-text select-text text-sm",
     done && "line-through text-easydo-textMuted",
   );
+  // 子项按原文行号定位，所以保留全部行；画布卡片只在渲染时跳过空行，悬停时只会多出子项
   const lines = detail.split("\n");
   const hasChecklist = lines.some((line) => parseChecklistLine(line));
+  const flag = highPriority ? <PriorityFlag /> : null;
+  const checklistOrderByLine = new Map<number, number>();
+  lines.forEach((line, index) => {
+    if (parseChecklistLine(line)) {
+      checklistOrderByLine.set(index, checklistOrderByLine.size);
+    }
+  });
+
+  // 列表里双击正文是选中文字；画布卡片几乎整张都是正文，双击正文也要进入编辑
+  const stopDoubleClick = compact ? undefined : (event: React.MouseEvent) => event.stopPropagation();
 
   if (!hasChecklist) {
     return (
-      <span className={detailClassName} onDoubleClick={(event) => event.stopPropagation()}>
-        {detail}
+      <span className={detailClassName} onDoubleClick={stopDoubleClick}>
+        {flag}
+        {compact ? lines.filter((line) => line.trim()).join("\n") : detail}
       </span>
     );
   }
 
   return (
-    <span className={detailClassName} onDoubleClick={(event) => event.stopPropagation()}>
+    <span className={cn(detailClassName, "flex flex-col gap-0.5")} onDoubleClick={stopDoubleClick}>
       {lines.map((line, index) => {
         const checklist = parseChecklistLine(line);
+        const checklistOrder = checklist ? checklistOrderByLine.get(index) ?? 0 : 0;
         if (!checklist) {
+          if (compact && !line.trim()) {
+            return null;
+          }
           return (
-            <span key={index} className="block min-h-5">
+            <span key={index} className="block min-h-[18px]">
+              {index === 0 ? flag : null}
               {line}
             </span>
           );
         }
 
         return (
-          <span key={index} className="flex min-h-5 min-w-0 items-start gap-2">
+          <span
+            key={index}
+            data-checklist-row
+            className={cn(
+              "min-h-[18px] min-w-0 items-start gap-2 text-sm text-easydo-textSecondary",
+              revealOnHover && checklistOrder >= pinnedChecklistRows ? "hidden group-hover:flex" : "flex",
+            )}
+          >
+            {index === 0 ? flag : null}
             <button
               type="button"
               title={checklist.checked ? "标记子任务未完成" : "标记子任务完成"}
               aria-pressed={checklist.checked}
               data-checklist-line={index}
               className={cn(
-                "mt-0.5 grid size-4 shrink-0 place-items-center rounded border transition hover:border-easydo-gold hover:bg-easydo-gold/15",
+                "mt-[2px] grid size-3.5 shrink-0 place-items-center rounded-[4px] border-[1.5px] transition-colors duration-150 hover:border-easydo-gold",
                 checklist.checked
-                  ? "border-easydo-gold bg-easydo-gold text-primary-foreground"
-                  : "border-easydo-border bg-easydo-bgSoft",
+                  ? "border-easydo-gold bg-easydo-gold text-easydo-onAccent"
+                  : "border-easydo-textMuted bg-transparent",
               )}
               onClick={(event) => {
                 event.stopPropagation();
@@ -402,7 +559,7 @@ function TodoDetailLines({ detail, done, onToggleChecklistLine }: TodoDetailLine
               }}
               onDoubleClick={(event) => event.stopPropagation()}
             >
-              {checklist.checked ? <Check className="size-3" /> : null}
+              {checklist.checked ? <Check className="size-2.5" strokeWidth={3.2} /> : null}
               <span className="sr-only">
                 {checklist.checked ? "标记子任务未完成" : "标记子任务完成"}
               </span>

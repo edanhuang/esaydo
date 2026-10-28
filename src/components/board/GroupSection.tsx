@@ -67,6 +67,7 @@ interface GroupSectionProps {
   ) => void;
   onDragEndTodo: () => void;
   externalDndContext?: boolean;
+  fullWidth?: boolean;
 }
 
 export function GroupSection({
@@ -98,6 +99,7 @@ export function GroupSection({
   onReorderTodo,
   onDragEndTodo,
   externalDndContext = false,
+  fullWidth = false,
 }: GroupSectionProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const lastScrolledTodoIdRef = useRef<string | null>(null);
@@ -189,14 +191,14 @@ export function GroupSection({
     <div
       ref={listRef}
       data-todo-list
-      className="no-scrollbar flex min-h-0 flex-col divide-y divide-border overflow-y-auto"
+      className="no-scrollbar flex min-h-0 flex-col gap-0.5 overflow-y-auto px-2 pb-2"
     >
       {suspendedTodos.length > 0 ? (
         <div data-suspended-todos>
           <button
             type="button"
             aria-expanded={suspendedExpanded}
-            className="flex w-full items-center gap-1 px-2 py-1 text-left text-xs text-easydo-textMuted transition-colors hover:bg-easydo-surfaceHover hover:text-easydo-textSecondary"
+            className="flex h-7 w-full items-center gap-1 rounded-md px-2 text-left text-xs text-easydo-textMuted transition-colors hover:bg-easydo-surfaceHover hover:text-easydo-textSecondary"
             onClick={(event) => {
               event.stopPropagation();
               onToggleSuspendedExpanded();
@@ -208,7 +210,7 @@ export function GroupSection({
             已挂起 {suspendedTodos.length}
           </button>
           {suspendedExpanded ? (
-            <div className="flex flex-col divide-y divide-border border-t border-border opacity-70">
+            <div className="mb-1 flex flex-col border-b border-easydo-borderSoft pb-1 opacity-70 [&>article:last-child]:after:hidden">
               {suspendedTodos.map((todo) => (
                 <TodoCard
                   key={todo.id}
@@ -222,7 +224,7 @@ export function GroupSection({
       ) : null}
       <SortableContext items={todoIds} strategy={verticalListSortingStrategy}>
         {activeTodos.length > 0 ? (
-          <div className="flex flex-col divide-y divide-border">
+          <div className="flex flex-col [&>article:last-child]:after:hidden">
             {activeTodos.map((todo) => (
               <SortableTodoCard key={todo.id} {...todoCardProps(todo)} />
             ))}
@@ -235,12 +237,16 @@ export function GroupSection({
   return (
     <section
       data-group-section={group.id}
-      className="flex h-fit max-h-full min-w-[240px] flex-1 self-start flex-col overflow-hidden rounded-md border border-border bg-card"
+      className={cn(
+        "flex h-fit max-h-full self-start flex-col overflow-hidden rounded-xl border border-easydo-borderSoft bg-easydo-surface shadow-easydo-card",
+        // 视图里只有一个分组时铺满；多个分组时每列至少 360，放不下就横向滚动
+        fullWidth ? "w-full" : "min-w-[360px] flex-1",
+      )}
       onClick={onSelectGroup}
     >
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-2 py-1.5">
+      <div className="flex h-10 shrink-0 items-center gap-2 px-4">
         <h2 className="text-sm font-semibold text-easydo-cream">{group.name}</h2>
-        <span className="border border-border bg-muted px-1.5 py-px text-xs text-muted-foreground">
+        <span className="text-sm tabular-nums text-easydo-textMuted">
           {activeTodos.length}
         </span>
       </div>

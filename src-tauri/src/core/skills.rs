@@ -438,12 +438,11 @@ mod tests {
     fn embedded_catalog_contains_easydo_skill() {
         let catalog = SkillCatalog::embedded().expect("load embedded catalog");
         assert_eq!(catalog.skills[0].name, "easydo");
-        assert_eq!(catalog.skills[0].version, "0.3.0");
+        assert_eq!(catalog.skills[0].version, "0.5.1");
         assert!(EMBEDDED_EASYDO_SKILL.contains("easydo list --json"));
         assert!(EMBEDDED_EASYDO_SKILL.contains("不得直接读写"));
-        assert!(EMBEDDED_EASYDO_SKILL.contains("独立 Agent"));
-        assert!(EMBEDDED_EASYDO_SKILL.contains("use subagents"));
-        assert!(EMBEDDED_EASYDO_SKILL.contains("single-agent fallback"));
+        assert!(EMBEDDED_EASYDO_SKILL.contains("## Todo 内容写法"));
+        assert!(EMBEDDED_EASYDO_SKILL.contains("会话内不要主动同步"));
         assert!(EMBEDDED_EASYDO_SKILL.contains("easydo inbox add"));
     }
 
@@ -506,7 +505,7 @@ mod tests {
             .expect("codex status");
         assert_eq!(codex.state, "outdated");
         assert!(codex.message.contains("0.1.0"));
-        assert!(codex.message.contains("0.3.0"));
+        assert!(codex.message.contains("0.5.1"));
 
         let result = install_skills(&embedded, "easydo", &[AgentTarget::Codex], home.path())
             .expect("upgrade");
@@ -514,9 +513,8 @@ mod tests {
         assert_eq!(result[0].status, "updated");
         let installed = fs::read_to_string(home.path().join(".codex/skills/easydo/SKILL.md"))
             .expect("read installed skill");
-        assert!(installed.contains("独立 Agent"));
-        assert!(installed.contains("use subagents"));
-        assert!(installed.contains("single-agent fallback"));
+        assert!(installed.contains("## Todo 内容写法"));
+        assert!(installed.contains("会话内不要主动同步"));
     }
 
     #[test]
