@@ -1,231 +1,118 @@
 # EasyDo
 
-Local-first Todo + Weekly Worklog desktop MVP.
+A local-first Todo app for macOS that keeps today's work on a board, turns finished work into a daily record for timesheets and weekly reports, and can hand a Todo to a local AI agent (Claude Code or Codex) to work on.
 
-## Prerequisites
+Everything is stored in a SQLite database on your Mac. There is no account and no cloud sync. The interface is in Simplified Chinese.
 
-- macOS
-- Node.js 22 recommended
-  - Install with nvm, Volta, asdf, or your system package manager.
-  - `node -v` should report `v22.x`.
-- npm
-- Rust and Cargo
-  - Required by Tauri.
-  - If not installed, install through Homebrew before running the Tauri app.
-- Tauri CLI
-  - Provided by the project dev dependency `@tauri-apps/cli`.
+## Features
 
-## Recommended Node Version
-
-Use Node 22 before installing dependencies or running local commands:
-
-```bash
-nvm use 22
-node -v
-npm -v
-cargo --version
-```
+- **Board.** Todos live in Groups (for example 工作, 学习). A View shows one or more Groups together, and each View can be laid out as a list or as a free-form canvas.
+- **Canvas.** Drag cards anywhere, resize them, pan past the edges, and pinch to zoom on the trackpad. Stretched cards show as many subtasks as fit; hover to see the rest.
+- **Rich Todos.** Lines written as `- [ ]` become checkable subtasks. Mark a Todo as high priority, suspend it into a collapsed section without losing its place, complete it, or archive it.
+- **Daily.** A week at a glance: what you added, changed, or finished on each day, ready for filling in timesheets or writing a weekly report.
+- **Bots.** Create Bots that run Claude Code or Codex in a working directory of your choice, then right-click a Todo and choose 派发给 Bot. See [Bots](#bots).
+- **Inbox.** Agents can drop results that do not belong to a clear Group into a temporary Inbox; items you do not keep expire the next morning.
+- **Command line and Agent Skill.** The `easydo` CLI and the bundled `easydo` Skill let Claude Code and Codex read and update your Todos. See [docs/cli.md](docs/cli.md).
+- **Agent Work Sync.** An optional Claude Code hook updates Todos in the background after a coding session. See [docs/agent-sync.md](docs/agent-sync.md).
+- **Light and dark themes**, and configurable keyboard shortcuts.
 
 ## Install
 
+There are no prebuilt releases yet. Build and install from source on an Apple Silicon Mac:
+
 ```bash
 npm install
+bash scripts/build-install-arm.sh
 ```
 
-## Local Development
+On an Intel Mac use `scripts/build-install-intel.sh`. Both scripts quit a running EasyDo, then install `EasyDo.app` into `/Applications`. See [Development](#development) for the toolchain.
 
-Run the Vite frontend only:
+After the first launch:
 
-```bash
-npm run dev
-```
+- To use the CLI or the Agent Skill, open Settings (`⌘,`) and click **Install CLI** under Command Line.
+- The first time a Bot replies while EasyDo is in the background, macOS asks whether EasyDo may send notifications.
 
-Run the desktop app through Tauri:
+## Keyboard
 
-```bash
-npm run tauri:dev
-```
+| Key | Action |
+| --- | --- |
+| `Enter` | Save the Todo in the input box (`Shift+Enter` for a new line) |
+| `Tab` | Switch the Group the input box adds to (in the input box) |
+| `Shift+Tab` | Switch the Board View |
+| `Option+Tab` | Switch the current View between list and canvas |
+| `⌘↑` / `⌘↓` | Select the previous / next Todo |
+| `Space` | Edit the selected Todo |
+| `⌘Enter` | Complete or reopen the selected Todo |
+| `⌘,` | Open Settings |
 
-`tauri:dev` first builds the matching `easydo-cli` sidecar used by the Settings dialog.
+The last four can be changed in Settings.
 
-## Command Line
+## Bots
 
-The macOS App contains the CLI. After moving `EasyDo.app` to Applications:
+A Bot is a saved setup for a local agent: a name and color, the agent (Claude Code or Codex), a model, and a working directory. Both CLIs must be installed and signed in on your Mac.
 
-1. Open EasyDo Settings.
-2. Find **Command Line**.
-3. Click **Install CLI** and approve the macOS authorization prompt if requested.
+- **Dispatch.** Right-click a Todo and choose 派发给 Bot. The Todo text and your optional note become the prompt. While the Bot runs, the Todo shows the Bot's avatar and cannot be completed or archived. Up to three Bots can run at once.
+- **One conversation per Todo and Bot.** Dispatching the same Todo to the same Bot again resumes the same agent session.
+- **Messages.** The Bot's final reply appears in the Messages drawer, rendered as Markdown, with an unread badge on the Todo. Reply there to continue the conversation, or open the session in Terminal, Ghostty, or iTerm2 (choose in Settings).
+- **Background runs.** Quitting EasyDo does not stop running Bots. On the next launch EasyDo picks up their results. When a Bot replies or fails while EasyDo is not in front, you get a macOS notification.
 
-This creates `/usr/local/bin/easydo` as a symbolic link to the CLI inside the App Bundle. Moving or renaming the App can invalidate the link; use **Reinstall CLI** from Settings to repair it. EasyDo does not overwrite a regular file or third-party link already using that path.
+> [!WARNING]
+> Bots run without permission prompts (`--permission-mode bypassPermissions` for Claude Code, `--dangerously-bypass-approvals-and-sandbox` for Codex), so they can read, change, and run anything the agent decides to in the working directory. Only point a Bot at a directory you are comfortable letting it change.
 
-Show all commands:
+The design is described in [docs/EasyDo_Bot_Dispatch_Design.md](docs/EasyDo_Bot_Dispatch_Design.md).
 
-```bash
-easydo help
-easydo list --help
-```
+## Data
 
-Query todos:
-
-```bash
-easydo list
-easydo list --view 工作
-easydo list --group 学习 --status active
-easydo list --from 2026-06-01 --to 2026-06-07
-easydo list --status all --json
-easydo groups
-easydo groups --json
-```
-
-`easydo groups` lists every Group, including ones that have no Todo yet. The text output shows regular Groups only; `--json` also includes system Groups such as the Inbox, marked by `systemKey`.
-
-Create and update todos:
-
-```bash
-easydo add "整理检查合并方案" --group 工作
-easydo update <todo-id-or-unique-prefix> --detail "更新后的内容"
-easydo mark <todo-id-or-unique-prefix> --priority high
-easydo mark <todo-id-or-unique-prefix> --priority normal
-easydo mark <todo-id-or-unique-prefix> --suspend
-easydo mark <todo-id-or-unique-prefix> --resume
-easydo done <todo-id-or-unique-prefix>
-easydo archive <todo-id-or-unique-prefix>
-```
-
-Todo selectors accept a full UUID or a unique ID prefix. Ambiguous prefixes are rejected.
-
-### Inbox
-
-Agent work that is worth recording but cannot be assigned to a reliable Group can be placed in the system Inbox:
-
-```bash
-easydo inbox add "待归类的工作结果" --json
-easydo list --view 收件箱 --json
-easydo move <todo-id-or-unique-prefix> --group 工作 --json
-```
-
-The Inbox is hidden from normal Views and the manual input Group selector. When it contains Todo items, the sidebar displays an Inbox entry. Drag an Inbox Todo onto a regular sidebar Group to keep it permanently.
-
-Inbox Todo items expire at 03:00 local time on the day after creation. EasyDo performs a logical-delete scan:
-
-- once when the App starts;
-- every 15 minutes while the App remains open;
-- before each CLI command that opens the database.
-
-If the App and CLI are both closed at 03:00, cleanup runs the next time either one opens the database. Logically deleted Inbox items are excluded from Board, Daily, Weekly, and CLI queries, including `--status all`.
-
-### Agent Skills
-
-EasyDo includes the `easydo` Skill 0.5.0. It instructs Agents to use the CLI instead of editing SQLite directly and keeps Todo text to "where things stand and what is next" rather than a work log or a full future plan. Work-result synchronization is no longer done inside the conversation; it is handled by the Agent Work Sync hook below.
-
-```bash
-easydo skills list
-easydo skills install easydo --agent codex
-easydo skills install all --agent all
-```
-
-Supported targets:
-
-- `agents`: `~/.agents/skills`
-- `codex`: `~/.codex/skills`
-- `claude`: `~/.claude/skills`
-- `all`: all three directories
-
-EasyDo only upgrades Skill directories containing its management marker. Existing user-managed directories are never overwritten.
-
-### Agent Work Sync (Claude Code hook)
-
-`scripts/agent-sync/` keeps EasyDo in step with Claude Code conversations without slowing them down:
-
-- `hook.sh` runs on `Stop` and `SessionEnd`. It only records the event and wakes the worker, then returns immediately.
-- `worker.py` runs as a single background daemon. When a session has been idle for 3 minutes and at least 30 minutes have passed since that session's last model call (or immediately when the session ends), it reads only the not-yet-synced part of the transcript, skips it when no real tool calls happened, and otherwise makes one headless Claude call with no tools that returns a JSON plan (add, update, move from the Inbox, or complete). The worker validates the plan against the current Todos and `easydo groups`, then runs the `easydo` CLI with argument arrays, so multi-line content needs no shell quoting.
-- `prompt.md` holds the sync rules; the Todo writing rules are read from the installed `easydo` Skill.
-
-Install or remove the hook (backs up `~/.claude/settings.json` first):
-
-```bash
-bash scripts/agent-sync/install.sh
-bash scripts/agent-sync/install.sh --uninstall
-```
-
-Results are logged to `~/Library/Logs/EasyDo/agent-sync.log`. Tune with `EASYDO_SYNC_IDLE_SECONDS`, `EASYDO_SYNC_MIN_INTERVAL_SECONDS`, and `EASYDO_SYNC_MODEL`; debug a transcript with `python3 -I scripts/agent-sync/worker.py once <transcript.jsonl> --dry-run`.
-
-### Database Overrides
-
-The desktop app and CLI normally share:
+The app and the CLI share one database:
 
 ```text
 ~/Library/Application Support/com.edanhuang.easydo/easydo.sqlite
 ```
 
-For tests or diagnostics, override the database for one command:
+Quit EasyDo before copying this folder to back it up or move it to another Mac. Bot run output and terminal scripts are kept in the same folder; logs are in `~/Library/Logs/EasyDo/`.
+
+## Development
+
+Requirements:
+
+- macOS
+- Node.js 22 and npm
+- Rust and Cargo (required by Tauri; the Tauri CLI comes from the `@tauri-apps/cli` dev dependency)
 
 ```bash
-easydo --database /tmp/easydo-test.sqlite list
-EASYDO_DB_PATH=/tmp/easydo-test.sqlite easydo list
+npm install
+npm run tauri:dev   # desktop app; builds the easydo-cli sidecar first
+npm run dev         # frontend only, in a browser
 ```
 
-`--database` takes precedence over `EASYDO_DB_PATH`.
-
-`EASYDO_DB_PATH` also applies to a locally launched desktop process, which allows UI verification against an isolated database without changing the normal App data.
-
-CLI errors are written to stderr with stable exit codes:
-
-- `2`: invalid command or input
-- `3`: missing or ambiguous entity
-- `4`: invalid Todo state transition
-- `5`: database, filesystem, or installation failure
-
-## Checks
-
-Type-check the frontend:
+Checks:
 
 ```bash
-npm run check
-```
-
-Build the frontend:
-
-```bash
-npm run build
-```
-
-Run Rust and CLI tests:
-
-```bash
-cd src-tauri
-cargo test --all-targets
+npm test                              # frontend tests (Vitest)
+npm run check                         # TypeScript
+cd src-tauri && cargo test --all-targets   # Rust and CLI tests
 ```
 
 The Rust build script creates a non-distributable sidecar placeholder when needed for local checks. `prepare-cli.sh` always replaces it with the real CLI before an App build.
 
-Build the current-architecture App:
+Builds:
 
 ```bash
-npm run tauri:build
-```
-
-Build and verify both Intel and Apple Silicon DMGs:
-
-```bash
-bash scripts/build-dmg.sh
-```
-
-Build one architecture and install it to `/Applications/EasyDo.app`:
-
-```bash
+npm run tauri:build                   # current architecture
+bash scripts/build-dmg.sh             # Intel and Apple Silicon DMGs, verified
+bash scripts/build-install-arm.sh     # build and install to /Applications
 bash scripts/build-install-intel.sh
-bash scripts/build-install-arm.sh
 ```
 
-The install scripts quit a running EasyDo app before replacing it. A cross-architecture run still builds and verifies the App/DMG, but skips installing to `/Applications` when the built architecture cannot run on the current Mac.
+A cross-architecture run still builds and verifies the App and DMG, but skips installing when the built architecture cannot run on the current Mac.
 
-## OpenSpec
+To try the app against a throwaway database, launch it with `EASYDO_DB_PATH=/tmp/easydo-test.sqlite`.
 
-The first-phase MVP change is tracked at:
+## Project layout
 
-```text
-openspec/changes/implement-first-phase-mvp
-```
-
-Use `/opsx:apply` for the implementation phase.
+- `src/`: React frontend (Vite, Tailwind CSS 4, shadcn/ui)
+- `src-tauri/`: Tauri app, Rust core, and the `easydo` CLI
+- `skills/easydo/`: the Agent Skill installed by `easydo skills install`
+- `scripts/`: build, install, and Agent Work Sync scripts
+- `docs/`: CLI reference, design documents, and UI style guides
+- `openspec/changes/`: change proposals and specs
