@@ -10,6 +10,13 @@ import type {
   SkillInstallLocationStatus,
 } from "@/types";
 
+// 终端设置走 Tauri 命令，这里的用例不关心，固定返回默认值
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  getTerminalSettings: vi.fn(async () => ({ version: 1, app: "terminal" })),
+  saveTerminalSettings: vi.fn(async (settings: unknown) => settings),
+}));
+
 describe("SettingsDialog", () => {
   const cliNotInstalled: CliInstallStatus = {
     state: "notInstalled",
@@ -66,21 +73,21 @@ describe("SettingsDialog", () => {
       />,
     );
 
-    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "设置" })).toBeInTheDocument();
 
-    await user.click(screen.getAllByText("Record")[1]);
-    fireEvent.keyDown(screen.getByRole("dialog", { name: "Settings" }), {
+    await user.click(screen.getAllByText("录制")[1]);
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "设置" }), {
       key: "ArrowDown",
       metaKey: true,
     });
 
     expect(screen.getAllByDisplayValue("Cmd + Down")).toHaveLength(2);
 
-    await user.click(screen.getByText("Save"));
+    await user.click(screen.getByText("保存"));
 
     expect(onSaveShortcuts).not.toHaveBeenCalled();
     expect(onSaveAppearance).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent("Next Todo conflicts with Previous Todo.");
+    expect(screen.getByRole("alert")).toHaveTextContent("「下一条」与「上一条」的快捷键冲突。");
   });
 
   it("records a valid shortcut without saving immediately", async () => {
@@ -97,8 +104,8 @@ describe("SettingsDialog", () => {
       />,
     );
 
-    await user.click(screen.getAllByText("Record")[0]);
-    fireEvent.keyDown(screen.getByRole("dialog", { name: "Settings" }), {
+    await user.click(screen.getAllByText("录制")[0]);
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "设置" }), {
       key: ".",
       metaKey: true,
     });
@@ -122,8 +129,8 @@ describe("SettingsDialog", () => {
       />,
     );
 
-    await user.click(screen.getByRole("radio", { name: "Light" }));
-    await user.click(screen.getByText("Save"));
+    await user.click(screen.getByRole("radio", { name: "浅色" }));
+    await user.click(screen.getByText("保存"));
 
     await waitFor(() => {
       expect(onSaveAppearance).toHaveBeenCalledWith({ version: 1, mode: "light" });
@@ -154,7 +161,7 @@ describe("SettingsDialog", () => {
     );
 
     expect(await screen.findByText(/命令行工具尚未安装/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Install CLI" }));
+    await user.click(screen.getByRole("button", { name: "安装命令行工具" }));
 
     await waitFor(() => {
       expect(installCli).toHaveBeenCalledTimes(1);
@@ -189,15 +196,15 @@ describe("SettingsDialog", () => {
     );
 
     expect(await screen.findByText("/Users/me/.codex/skills/easydo")).toBeInTheDocument();
-    expect(screen.getAllByLabelText("installed")).toHaveLength(1);
-    expect(screen.getAllByLabelText("not installed").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("已安装")).toHaveLength(1);
+    expect(screen.getAllByText("未安装").length).toBeGreaterThanOrEqual(2);
 
-    await user.click(screen.getAllByRole("button", { name: "Install" })[0]);
+    await user.click(screen.getAllByRole("button", { name: "安装" })[0]);
     await waitFor(() => {
       expect(installSkill).toHaveBeenCalledWith("easydo", "agents", undefined);
     });
 
-    await user.click(screen.getByRole("button", { name: "Choose Folder" }));
+    await user.click(screen.getByRole("button", { name: "选择文件夹" }));
     await waitFor(() => {
       expect(chooseSkillDirectory).toHaveBeenCalledTimes(1);
       expect(loadSkillStatuses).toHaveBeenLastCalledWith("easydo", [

@@ -56,6 +56,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
           detail TEXT NOT NULL,
           status TEXT NOT NULL DEFAULT 'active',
           priority TEXT NOT NULL DEFAULT 'normal',
+          suspended_at TEXT,
           extra_text TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
@@ -145,6 +146,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     ensure_column(conn, "todos", "deleted_at", "TEXT")?;
     ensure_column(conn, "todos", "delete_reason", "TEXT")?;
     ensure_column(conn, "todos", "priority", "TEXT NOT NULL DEFAULT 'normal'")?;
+    ensure_column(conn, "todos", "suspended_at", "TEXT")?;
     ensure_column(conn, "groups", "system_key", "TEXT")?;
     ensure_column(conn, "board_views", "system_key", "TEXT")?;
     ensure_todo_group_sort_order(conn)?;
@@ -160,8 +162,82 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         ON todos(deleted_at);
         CREATE INDEX IF NOT EXISTS idx_todos_priority
         ON todos(priority);
+        CREATE TABLE IF NOT EXISTS todo_canvas_positions (
+          board_view_id TEXT NOT NULL,
+          todo_id TEXT NOT NULL,
+          x REAL NOT NULL,
+          y REAL NOT NULL,
+          width REAL,
+          height REAL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (board_view_id, todo_id),
+          FOREIGN KEY (board_view_id) REFERENCES board_views(id) ON DELETE CASCADE,
+          FOREIGN KEY (todo_id) REFERENCES todos(id) ON DELETE CASCADE
+        );
         "#,
     )?;
+    ensure_column(conn, "todo_canvas_positions", "width", "REAL")?;
+    ensure_column(conn, "todo_canvas_positions", "height", "REAL")?;
+    // Bot 派发：Bot 配置、每对 Todo × Bot 的会话、每次运行、会话里的消息
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS bots (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          color TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          model TEXT NOT NULL DEFAULT '',
+          directory TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS bot_sessions (
+          id TEXT PRIMARY KEY,
+          bot_id TEXT NOT NULL,
+          todo_id TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          cwd TEXT NOT NULL,
+          session_id TEXT,
+          title TEXT,
+          usage_totals TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE (bot_id, todo_id),
+          FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
+          FOREIGN KEY (todo_id) REFERENCES todos(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS bot_runs (
+          id TEXT PRIMARY KEY,
+          session_ref TEXT NOT NULL,
+          status TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          finished_at TEXT,
+          input_tokens INTEGER NOT NULL DEFAULT 0,
+          cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+          output_tokens INTEGER NOT NULL DEFAULT 0,
+          cost_usd REAL,
+          error TEXT,
+          FOREIGN KEY (session_ref) REFERENCES bot_sessions(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS bot_messages (
+          id TEXT PRIMARY KEY,
+          session_ref TEXT NOT NULL,
+          run_id TEXT,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          read_at TEXT,
+          FOREIGN KEY (session_ref) REFERENCES bot_sessions(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_bot_runs_status ON bot_runs(status);
+        CREATE INDEX IF NOT EXISTS idx_bot_runs_session ON bot_runs(session_ref);
+        CREATE INDEX IF NOT EXISTS idx_bot_messages_session ON bot_messages(session_ref);
+        "#,
+    )?;
+    // Bot 进程脱离 EasyDo 运行：记下进程和它的输出文件，EasyDo 重启后据此接回或同步结果
+    ensure_column(conn, "bot_runs", "pid", "INTEGER")?;
+    ensure_column(conn, "bot_runs", "process_started", "TEXT")?;
+    ensure_column(conn, "bot_runs", "output_path", "TEXT")?;
     Ok(())
 }
 

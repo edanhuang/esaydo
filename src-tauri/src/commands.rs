@@ -7,15 +7,22 @@ use tauri::State;
 use crate::core::cli_install::{bundled_cli_path, inspect_cli_install, install_cli, CLI_LINK_PATH};
 use crate::core::db::now_iso;
 use crate::core::models::{
-    AppearanceSettings, BoardViewWithGroups, CliInstallStatus, DailyTodoWithRelations, Group,
-    LayoutSettings, ShortcutBinding, ShortcutSettings, TodoWithRelations,
+    AppearanceSettings, BoardViewWithGroups, CanvasPosition, CliInstallStatus,
+    DailyTodoWithRelations, Group, LayoutSettings, ShortcutBinding, ShortcutSettings,
+    TodoWithRelations,
 };
 use crate::core::skills::{
     custom_location_statuses, default_location_statuses, install_skill_to_custom_root,
     install_skill_to_default_target, AgentTarget, SkillCatalog, SkillDefinition,
     SkillInstallLocationStatus,
 };
-use crate::core::{todo_service, workspace_service};
+use crate::bot_runner;
+use crate::core::bot_agent;
+use crate::core::bot_service::{
+    self, ActiveBotRun, Bot, BotConversation, BotInput, BotMessage, DispatchPreview, TodoUnread,
+};
+use crate::core::terminal::{self, TerminalSettings};
+use crate::core::{canvas_service, diagnostics, todo_service, workspace_service};
 use crate::AppState;
 
 type CommandResult<T> = Result<T, String>;
@@ -87,6 +94,16 @@ pub fn set_todo_priority(
     let mut conn = lock_conn(&state)?;
     let priority = todo_service::parse_todo_priority(&priority).map_err(to_string)?;
     todo_service::set_todo_priority(&mut conn, &id, priority).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn set_todo_suspended(
+    state: State<'_, AppState>,
+    id: String,
+    suspended: bool,
+) -> CommandResult<TodoWithRelations> {
+    let mut conn = lock_conn(&state)?;
+    todo_service::set_todo_suspended(&mut conn, &id, suspended).map_err(to_string)
 }
 
 #[tauri::command]
@@ -170,6 +187,269 @@ pub fn save_selected_board_view_id(
 ) -> CommandResult<String> {
     let conn = lock_conn(&state)?;
     save_selected_board_view_id_to_conn(&conn, &board_view_id)
+}
+
+#[tauri::command]
+pub fn list_canvas_positions(
+    state: State<'_, AppState>,
+    board_view_id: String,
+) -> CommandResult<Vec<CanvasPosition>> {
+    let conn = lock_conn(&state)?;
+    canvas_service::list_canvas_positions(&conn, &board_view_id).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn save_canvas_positions(
+    state: State<'_, AppState>,
+    board_view_id: String,
+    positions: Vec<CanvasPosition>,
+) -> CommandResult<()> {
+    let mut conn = lock_conn(&state)?;
+    canvas_service::save_canvas_positions(&mut conn, &board_view_id, &positions).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn list_bots(state: State<'_, AppState>) -> CommandResult<Vec<Bot>> {
+    let conn = lock_conn(&state)?;
+    bot_service::list_bots(&conn).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn create_bot(state: State<'_, AppState>, input: BotInput) -> CommandResult<Bot> {
+    let conn = lock_conn(&state)?;
+    bot_service::create_bot(&conn, &input).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn update_bot(state: State<'_, AppState>, id: String, input: BotInput) -> CommandResult<Bot> {
+    let conn = lock_conn(&state)?;
+    bot_service::update_bot(&conn, &id, &input).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn count_bot_messages(state: State<'_, AppState>, id: String) -> CommandResult<i64> {
+    let conn = lock_conn(&state)?;
+    bot_service::count_bot_messages(&conn, &id).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn delete_bot(app: tauri::AppHandle, state: State<'_, AppState>, id: String) -> CommandResult<()> {
+    let conn = lock_conn(&state)?;
+    bot_service::delete_bot(&conn, &id).map_err(to_string)?;
+    drop(conn);
+    bot_runner::notify_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn choose_bot_directory() -> CommandResult<Option<String>> {
+    Ok(rfd::FileDialog::new()
+        .set_title("选择 Bot 的工作目录")
+        .pick_folder()
+        .map(|path| path.display().to_string()))
+}
+
+#[tauri::command]
+pub fn get_bot_dispatch_preview(
+    state: State<'_, AppState>,
+    todo_id: String,
+    bot_id: String,
+) -> CommandResult<DispatchPreview> {
+    let conn = lock_conn(&state)?;
+    bot_service::dispatch_preview(&conn, &todo_id, &bot_id).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn dispatch_todo_to_bot(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    todo_id: String,
+    bot_id: String,
+    instruction: String,
+) -> CommandResult<()> {
+    let prepared = {
+        let mut conn = lock_conn(&state)?;
+        bot_service::prepare_run(&mut conn, &todo_id, &bot_id, &instruction).map_err(to_string)?
+    };
+    bot_runner::start(app.clone(), prepared);
+    bot_runner::notify_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_bot_run(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    todo_id: String,
+    bot_id: String,
+) -> CommandResult<()> {
+    let mut conn = lock_conn(&state)?;
+    let runs = bot_service::list_active_runs(&conn).map_err(to_string)?;
+    let Some(run) = runs.into_iter().find(|run| run.todo_id == todo_id && run.bot_id == bot_id) else {
+        return Ok(());
+    };
+    // 进程还在：结束它，由运行线程记成已停止；进程已经不在了就直接记
+    if !state.runs.stop(&run.run_id) {
+        let session_ref: String = conn
+            .query_row(
+                "SELECT session_ref FROM bot_runs WHERE id = ?1",
+                params![run.run_id],
+                |row| row.get(0),
+            )
+            .map_err(to_string)?;
+        bot_service::finish_run(
+            &mut conn,
+            &bot_service::FinishedRun {
+                run_id: run.run_id,
+                session_ref,
+                status: "stopped".to_string(),
+                usage: bot_service::RunUsage::default(),
+                error: None,
+                final_text: None,
+                session_id: None,
+                title: None,
+                usage_totals: None,
+            },
+        )
+        .map_err(to_string)?;
+        drop(conn);
+        bot_runner::notify_changed(&app);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_active_bot_runs(state: State<'_, AppState>) -> CommandResult<Vec<ActiveBotRun>> {
+    let conn = lock_conn(&state)?;
+    bot_service::list_active_runs(&conn).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn list_bot_unread(state: State<'_, AppState>) -> CommandResult<Vec<TodoUnread>> {
+    let conn = lock_conn(&state)?;
+    bot_service::list_unread_by_todo(&conn).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn list_bot_conversations(state: State<'_, AppState>) -> CommandResult<Vec<BotConversation>> {
+    let conn = lock_conn(&state)?;
+    bot_service::list_conversations(&conn).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn list_bot_messages(
+    state: State<'_, AppState>,
+    todo_id: String,
+    bot_id: String,
+) -> CommandResult<Vec<BotMessage>> {
+    let conn = lock_conn(&state)?;
+    bot_service::list_messages(&conn, &todo_id, &bot_id).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn mark_bot_messages_read(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    todo_id: String,
+    bot_id: String,
+) -> CommandResult<()> {
+    let conn = lock_conn(&state)?;
+    bot_service::mark_read(&conn, &todo_id, &bot_id).map_err(to_string)?;
+    drop(conn);
+    bot_runner::notify_changed(&app);
+    Ok(())
+}
+
+/// 在设置里选定的终端 App 里打开 Bot 的会话：写一个可执行脚本交给它运行，不需要控制其他 App 的权限
+#[tauri::command]
+pub fn open_bot_session_in_terminal(
+    state: State<'_, AppState>,
+    todo_id: String,
+    bot_id: String,
+) -> CommandResult<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (location, settings) = {
+        let conn = lock_conn(&state)?;
+        (
+            bot_service::session_location(&conn, &todo_id, &bot_id).map_err(to_string)?,
+            terminal::load(&conn).map_err(to_string)?,
+        )
+    };
+    let app = settings.app.as_str();
+    let installed = ["/Applications", "/System/Applications/Utilities", "/Applications/Utilities"]
+        .iter()
+        .any(|dir| std::path::Path::new(dir).join(terminal::app_bundle(app)).exists());
+    if !installed {
+        return Err(format!("没有找到 {}，请在设置里换一个终端", terminal::app_label(app)));
+    }
+    let dir = state
+        .runs_dir
+        .parent()
+        .map(|parent| parent.join("terminal-scripts"))
+        .unwrap_or_else(|| state.runs_dir.join("terminal-scripts"));
+    std::fs::create_dir_all(&dir).map_err(to_string)?;
+    // 每段会话一个脚本，重复打开就覆盖
+    let script = dir.join(format!("{}.command", location.session_id));
+    std::fs::write(&script, bot_agent::resume_script(&location.provider, &location.cwd, &location.session_id))
+        .map_err(to_string)?;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).map_err(to_string)?;
+    let status = std::process::Command::new("open")
+        .args(terminal::open_args(app, &script))
+        .status()
+        .map_err(to_string)?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("打开 {} 失败", terminal::app_label(app)))
+    }
+}
+
+#[tauri::command]
+pub fn get_terminal_settings(state: State<'_, AppState>) -> CommandResult<TerminalSettings> {
+    let conn = lock_conn(&state)?;
+    terminal::load(&conn).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn save_terminal_settings(
+    state: State<'_, AppState>,
+    settings: TerminalSettings,
+) -> CommandResult<TerminalSettings> {
+    let conn = lock_conn(&state)?;
+    terminal::save(&conn, settings).map_err(to_string)
+}
+
+/// 用户确认「仍然退出」后调用
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+/// 前端画布交互的排查记录，写到 ~/Library/Logs/EasyDo/canvas.log
+#[tauri::command]
+pub fn append_canvas_log(lines: Vec<String>) -> CommandResult<()> {
+    let path = diagnostics::canvas_log_path().ok_or_else(|| "无法确定用户目录".to_string())?;
+    diagnostics::append_log_lines(&path, &lines).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn get_board_layout_mode(
+    state: State<'_, AppState>,
+    board_view_id: String,
+) -> CommandResult<String> {
+    let conn = lock_conn(&state)?;
+    canvas_service::get_board_layout_mode(&conn, &board_view_id).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn save_board_layout_mode(
+    state: State<'_, AppState>,
+    board_view_id: String,
+    mode: String,
+) -> CommandResult<String> {
+    let conn = lock_conn(&state)?;
+    canvas_service::save_board_layout_mode(&conn, &board_view_id, &mode).map_err(to_string)
 }
 
 #[tauri::command]

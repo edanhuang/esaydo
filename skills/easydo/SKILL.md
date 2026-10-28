@@ -1,6 +1,6 @@
 ---
 name: easydo
-description: 使用 EasyDo CLI 查询、新增、修改、完成、归档或迁移本地 Todo；一次交互完成实际工作后，仅在用户显式允许 subagents 时使用并行 Agent 编排，否则由单 Agent 保守同步工作结果。
+description: 使用 EasyDo CLI 查询、新增、修改、完成、归档或迁移本地 Todo，并规定 Todo 内容写法；工作结果同步由后台 hook 自动完成，会话内不主动同步。
 ---
 
 # EasyDo
@@ -38,6 +38,42 @@ easydo move <todo-id-or-unique-prefix> --group 工作 --json
 
 写操作必须使用查询结果中的完整 ID 或可确认唯一的 ID 前缀。用户目标不明确或 CLI 返回 `Todo ID 前缀不唯一` 时，先查询并向用户澄清，不得猜测。
 
+## Todo 内容写法
+
+看板只回答两个问题：做到哪了，下一步做什么，不回答后面全部要做什么。细节留在对话、提交记录或文档里。
+
+- 主句：一句话，写清楚项目或需求号、是什么事；必要时补一句当前卡在哪。
+- 子项只写当下：正在做或下一步马上要做的事，以及对话里明确提到、但还没做的事（待确认、先记着、暂缓的都算）。
+- 不推演后续流程：比如复审、写测试用例、提测、上线，除非用户明确要求列全要做的事。
+- 关键节点：能定义主 Todo 进度的阶段，完成后保留并打勾 `- [x]`。
+- 非关键节点：完成后删除，不保留 `- [x]`。
+- 写法：子项用 `- [ ]` / `- [x]`，写成短语，不限条数。不写 commit、requestId、数据 ID、类名和方法名、日志时间点、测试数量、排查过程。
+- 空格：中文与数字、中文与英文之间不加空格（写「需求216635」「第3轮codingplan」，不写「需求 216635」「第 3 轮 codingplan」）；用户手写内容里原有的空格照旧保留。
+- 更新方式：改写主句和子项列表，不追加段落、日期标题或评审记录。
+- 手写内容：只调整 Agent 自己写入的内容，用户手写的内容原样保留。
+
+反例（工作日志式，信息过细且推演了后续流程）：
+
+```text
+需求 212089 明访任务现场检查操作优化1：接口框架已提交并推送 909b20f73，JDK8 编译及 4 个契约测试通过；后续完成 modifyContext 填充、已有组修改后的结果重算与限制校验……
+
+2026-10-19 代码 Review（仅分析，11 个新增测试通过，BUILD SUCCESS）
+- [x] 确认保存请求主要字段与报告图片定位主路径未见明确遗漏
+- [ ] 提测前修复：修改/恢复与确认未共用同一把锁，存在并发写入窗口
+- [ ] 用 testcase-by-setup 出测试用例
+- [ ] 上线时打开 Apollo 开关
+```
+
+正例：
+
+```text
+需求216635门店现场质检操作优化V1（他人AI开发，我负责review）
+- [x] 3个功能点问题梳理、决策记录
+- [x] 第3轮codingplan，功能点③改回正确口径
+- [ ] 第4轮待修：页面编译不过、已完成对象不能再加一组
+- [ ] 确认再拍时点返回是否也算「确认并完成」
+```
+
 ## 错误
 
 CLI 返回非零退出码时，向用户转述 stderr 中简短明确的原因，不得声称操作成功。需要了解命令格式时执行：
@@ -49,58 +85,6 @@ easydo <command> --help
 
 ## 工作结果同步
 
-仅当本次交互实际修改代码、生成交付物、完成配置或发布、或者形成值得跟进的明确排查结论时，才考虑同步。闲聊、提问、纯方案讨论、用户明确要求不实施、无结论失败，以及 EasyDo 操作本身不得触发同步。
+工作结果同步由 EasyDo 安装的 Claude Code hook 在会话之外自动完成：会话空闲后，后台判断这段对话是新工作还是某条 Todo 的推进，并按「Todo 内容写法」维护 Todo。
 
-先检查用户原始 prompt 是否显式允许 subagents。仅当 prompt 包含以下任一短语时，启用 subagent 版流程：
-
-- `use subagents`
-- `spawn agents`
-- `parallel agents`
-- `并行 agent`
-- `使用 sub-agent`
-- `让多个 agent 分别处理`
-
-未命中上述短语时，执行 single-agent fallback 流程，并在开始处理前提示用户：
-
-> EasyDo 支持使用 subagents 并行完成 Todo 编排。若希望下次自动并行处理，请在 prompt 里加：`使用 sub-agent 完成 EasyDo 编排` / `use subagents`。
-
-subagent 版流程：将自动同步全程交给宿主创建的独立 Agent。若本次开启独立 Agent 被工具权限、可用工具列表或调用限制阻断，则回退到 single-agent fallback 流程。若宿主完全不支持独立 Agent能力，则返回 unavailable 并跳过。
-
-single-agent fallback 流程：由当前主流程执行同一套保守确认规则，不得为了并行而启动 Agent。
-
-主 Agent向独立 Agent传递：
-
-```json
-{
-  "summary": "本次实际完成的事情",
-  "workspace": "/absolute/project/path",
-  "outcome": "progressed|completed|blocked",
-  "verification": ["已执行的测试或验证"],
-  "explicit_group": null
-}
-```
-
-执行 Agent或 single-agent fallback 按以下顺序处理，并且每个事件最多变更一条 Todo：
-
-1. 执行 `easydo list --status active --json` 查询已有 Todo。
-2. 根据项目、模块、功能关键词、Group 和近期活动寻找唯一高置信度匹配。
-3. 唯一匹配且只是取得进展时更新现有 Todo；只有明确完成且验证通过时才能执行 `easydo done`。
-4. 没有匹配时，按显式 Group、已有 Todo Group、workspace 映射、语义判断的顺序选择普通 Group并新增。
-5. 确认值得记录但无法可靠判断 Group 时，执行 `easydo inbox add`。
-6. 多个候选无法区分或无法确认是否值得记录时返回 noop，不修改 Todo。
-7. 禁止同步 EasyDo 同步行为本身，避免递归。
-
-执行 Agent或 single-agent fallback 返回结构化回执：
-
-```json
-{
-  "action": "add|update|done|inbox|noop|unavailable|fallback|failed",
-  "todo_id": null,
-  "group": null,
-  "reason": "简短明确的处理原因"
-}
-```
-
-CLI 失败时 action 必须是 failed，reason 使用 stderr 原因，不得声称同步成功。
-
-当主流程因工具限制接管自动同步时，回执 action 使用实际变更动作；仅在需要说明“已从独立 Agent 回退到主流程”且未执行 Todo 变更时才使用 fallback。
+会话内不要主动同步工作结果，避免重复写入。只有用户明确要求记录或修改 Todo 时，才按上面的显式操作执行。

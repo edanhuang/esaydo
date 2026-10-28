@@ -211,6 +211,36 @@ fn mark_todo_priority_updates_json_and_plain_list_marks() {
 }
 
 #[test]
+fn mark_todo_suspend_and_resume_updates_json_and_plain_list_marks() {
+    let (_root, path) = database();
+    let created = run_json(&path, &["add", "挂起 CLI", "--group", "工作", "--json"]);
+    let id = created["id"].as_str().expect("todo id");
+    assert!(created["suspendedAt"].is_null());
+
+    let suspended = run_json(&path, &["mark", &id[..8], "--suspend", "--json"]);
+    assert!(suspended["suspendedAt"].is_string());
+
+    cli()
+        .arg("--database")
+        .arg(&path)
+        .args(["list", "--group", "工作"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("suspended"))
+        .stdout(predicate::str::contains("挂起 CLI"));
+
+    let resumed = run_json(&path, &["mark", &id[..8], "--resume", "--json"]);
+    assert!(resumed["suspendedAt"].is_null());
+
+    cli()
+        .arg("--database")
+        .arg(&path)
+        .args(["mark", &id[..8], "--suspend", "--resume"])
+        .assert()
+        .code(2);
+}
+
+#[test]
 fn view_group_status_and_time_filters_compose() {
     let (_root, path) = database();
     let work = run_json(&path, &["add", "工作任务", "--group", "工作", "--json"]);
@@ -358,7 +388,7 @@ fn skills_list_and_install_are_isolated_and_idempotent() {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"name\": \"easydo\""))
-        .stdout(predicate::str::contains("\"version\": \"0.3.0\""));
+        .stdout(predicate::str::contains("\"version\": \"0.5.1\""));
     cli()
         .env("EASYDO_HOME", home.path())
         .args(["skills", "install", "easydo", "--agent", "all", "--json"])
@@ -400,4 +430,30 @@ fn skills_list_and_install_are_isolated_and_idempotent() {
         .assert()
         .code(5)
         .stderr(predicate::str::contains("codex: Skill 目录冲突"));
+}
+
+#[test]
+fn groups_lists_every_group_including_empty_ones() {
+    let (_root, path) = database();
+    run_json(&path, &["add", "只在工作里有 Todo", "--group", "工作", "--json"]);
+
+    let groups = run_json(&path, &["groups", "--json"]);
+    let groups = groups.as_array().expect("groups array");
+    let names = groups
+        .iter()
+        .map(|group| group["name"].as_str().expect("group name"))
+        .collect::<Vec<_>>();
+    for expected in ["工作", "学习", "健身", "生活", "个人项目"] {
+        assert!(names.contains(&expected), "missing {expected} in {names:?}");
+    }
+    assert!(groups.iter().any(|group| group["systemKey"] == "inbox"));
+
+    cli()
+        .arg("--database")
+        .arg(&path)
+        .arg("groups")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("个人项目"))
+        .stdout(predicate::str::contains("收件箱").not());
 }

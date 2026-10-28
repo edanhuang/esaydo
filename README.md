@@ -73,7 +73,11 @@ easydo list --view 工作
 easydo list --group 学习 --status active
 easydo list --from 2026-06-01 --to 2026-06-07
 easydo list --status all --json
+easydo groups
+easydo groups --json
 ```
+
+`easydo groups` lists every Group, including ones that have no Todo yet. The text output shows regular Groups only; `--json` also includes system Groups such as the Inbox, marked by `systemKey`.
 
 Create and update todos:
 
@@ -82,6 +86,8 @@ easydo add "整理检查合并方案" --group 工作
 easydo update <todo-id-or-unique-prefix> --detail "更新后的内容"
 easydo mark <todo-id-or-unique-prefix> --priority high
 easydo mark <todo-id-or-unique-prefix> --priority normal
+easydo mark <todo-id-or-unique-prefix> --suspend
+easydo mark <todo-id-or-unique-prefix> --resume
 easydo done <todo-id-or-unique-prefix>
 easydo archive <todo-id-or-unique-prefix>
 ```
@@ -110,7 +116,7 @@ If the App and CLI are both closed at 03:00, cleanup runs the next time either o
 
 ### Agent Skills
 
-EasyDo includes the `easydo` Skill 0.3.0. It instructs Agents to use the CLI instead of editing SQLite directly and defines a conservative post-work synchronization protocol. The Skill uses subagents only when the prompt explicitly includes wording such as `use subagents` or `使用 sub-agent`; otherwise it uses the single-agent fallback flow:
+EasyDo includes the `easydo` Skill 0.5.0. It instructs Agents to use the CLI instead of editing SQLite directly and keeps Todo text to "where things stand and what is next" rather than a work log or a full future plan. Work-result synchronization is no longer done inside the conversation; it is handled by the Agent Work Sync hook below.
 
 ```bash
 easydo skills list
@@ -127,7 +133,22 @@ Supported targets:
 
 EasyDo only upgrades Skill directories containing its management marker. Existing user-managed directories are never overwritten.
 
-Automatic work synchronization is skipped when the Agent host has no separate-Agent capability and the prompt explicitly requested subagents. If subagent startup is blocked by permissions or available-tool limits, or if the prompt did not explicitly request subagents, the main flow may perform the same conservative Todo confirmation instead.
+### Agent Work Sync (Claude Code hook)
+
+`scripts/agent-sync/` keeps EasyDo in step with Claude Code conversations without slowing them down:
+
+- `hook.sh` runs on `Stop` and `SessionEnd`. It only records the event and wakes the worker, then returns immediately.
+- `worker.py` runs as a single background daemon. When a session has been idle for 3 minutes and at least 30 minutes have passed since that session's last model call (or immediately when the session ends), it reads only the not-yet-synced part of the transcript, skips it when no real tool calls happened, and otherwise makes one headless Claude call with no tools that returns a JSON plan (add, update, move from the Inbox, or complete). The worker validates the plan against the current Todos and `easydo groups`, then runs the `easydo` CLI with argument arrays, so multi-line content needs no shell quoting.
+- `prompt.md` holds the sync rules; the Todo writing rules are read from the installed `easydo` Skill.
+
+Install or remove the hook (backs up `~/.claude/settings.json` first):
+
+```bash
+bash scripts/agent-sync/install.sh
+bash scripts/agent-sync/install.sh --uninstall
+```
+
+Results are logged to `~/Library/Logs/EasyDo/agent-sync.log`. Tune with `EASYDO_SYNC_IDLE_SECONDS`, `EASYDO_SYNC_MIN_INTERVAL_SECONDS`, and `EASYDO_SYNC_MODEL`; debug a transcript with `python3 -I scripts/agent-sync/worker.py once <transcript.jsonl> --dry-run`.
 
 ### Database Overrides
 

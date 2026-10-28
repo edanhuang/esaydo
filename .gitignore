@@ -37,3 +37,11 @@ pnpm-debug.log*
 # Temporary files
 tmp/
 temp/
+
+# TypeScript 增量构建产物（tsc -b）
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Python
+__pycache__/

@@ -14,16 +14,21 @@ import {
   countInboxTodos,
   createTodo,
   deleteTodo,
+  getBoardLayoutMode,
   getSelectedBoardViewId,
+  listCanvasPositions,
   listBoardViews,
   listGroups,
   listTodos,
   moveTodoFromInbox,
   reopenTodo,
   reorderTodosInGroup,
+  saveBoardLayoutMode,
+  saveCanvasPositions,
   saveSelectedBoardViewId,
   setBoardViewGroupMembership,
   setTodoPriority,
+  setTodoSuspended,
   updateTodoDetail,
 } from "../lib/api";
 import {
@@ -32,14 +37,29 @@ import {
   shortcutMatches,
 } from "../lib/shortcuts";
 import { toggleChecklistLineAtIndex } from "../lib/checklist";
-import type { AppView, BoardView, Group, ShortcutSettings, Todo, TodoPriority } from "../types";
+import { sortByCanvasPosition } from "../lib/canvasLayout";
+import { fmtPoint, logCanvas, shortId } from "../lib/canvasLog";
+import type {
+  AppView,
+  BoardLayoutMode,
+  BoardView,
+  CanvasPosition,
+  Group,
+  ShortcutSettings,
+  Todo,
+  TodoPriority,
+} from "../types";
+import { BoardCanvas } from "../components/board/BoardCanvas";
 import { GroupSection } from "../components/board/GroupSection";
 import {
   BoardViewSwitcher,
   type BoardViewTransitionDirection,
 } from "../components/board/BoardViewSwitcher";
 import { TodoInput } from "../components/board/TodoInput";
-import { AppSidebar } from "@/components/layout/AppSidebar";
+import { AppSidebar, SidebarExpandButton } from "@/components/layout/AppSidebar";
+import { useBotActivity } from "@/components/bots/BotActivity";
+import { MessagesButton } from "@/components/bots/MessagesButton";
+import { cn } from "@/lib/utils";
 
 interface BoardPageProps {
   onNavigate: (view: AppView) => void;
@@ -81,6 +101,13 @@ export function BoardPage({
     position: "before" | "after";
   } | null>(null);
   const [inboxDraggedTodoId, setInboxDraggedTodoId] = useState<string | null>(null);
+  const [highlightSelection, setHighlightSelection] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<BoardLayoutMode>("list");
+  const [canvasPositions, setCanvasPositions] = useState<Map<string, CanvasPosition>>(() => new Map());
+  const [canvasPositionsViewId, setCanvasPositionsViewId] = useState<string | null>(null);
+  const [expandedSuspendedGroupIds, setExpandedSuspendedGroupIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,6 +126,10 @@ export function BoardPage({
   const currentGroup = regularGroups[currentGroupIndex] ?? null;
   const currentBoardView = boardViews[currentBoardViewIndex] ?? null;
   const isInboxView = currentBoardView?.systemKey === "inbox";
+  const lastRegularBoardViewIdRef = useRef<string | null>(null);
+  if (currentBoardView && !isInboxView) {
+    lastRegularBoardViewIdRef.current = currentBoardView.id;
+  }
   const regularBoardViewIndex = currentBoardView
     ? regularBoardViews.findIndex((view) => view.id === currentBoardView.id)
     : -1;
@@ -113,10 +144,34 @@ export function BoardPage({
     [todos],
   );
 
-  const visibleTodoIds = useMemo(() => visibleTodos.map((todo) => todo.id), [visibleTodos]);
-  function selectTodo(id: string | null) {
+  // 折叠中的挂起 Todo 不可见，不参与键盘选择与编辑
+  const canvasMode = layoutMode === "canvas" && !isInboxView;
+  const highlightedTodoId = highlightSelection ? selectedTodoId : null;
+  const canvasTodos = useMemo(
+    () => visibleTodos.filter((todo) => todo.suspendedAt === null),
+    [visibleTodos],
+  );
+  const canvasSuspendedTodos = useMemo(
+    () => visibleTodos.filter((todo) => todo.suspendedAt !== null),
+    [visibleTodos],
+  );
+  const visibleTodoIds = useMemo(() => {
+    if (canvasMode) {
+      return sortByCanvasPosition(canvasTodos, canvasPositions).map((todo) => todo.id);
+    }
+    return visibleTodos
+      .filter(
+        (todo) =>
+          todo.suspendedAt === null ||
+          todo.groups.some((group) => expandedSuspendedGroupIds.has(group.id)),
+      )
+      .map((todo) => todo.id);
+  }, [canvasMode, canvasTodos, canvasPositions, visibleTodos, expandedSuspendedGroupIds]);
+  // 鼠标点选只记录当前 Todo（供快捷键使用），不留高亮；只有键盘上下切换时才高亮
+  function selectTodo(id: string | null, options: { highlight?: boolean } = {}) {
     selectedTodoIdRef.current = id;
     setSelectedTodoId(id);
+    setHighlightSelection(id !== null && Boolean(options.highlight));
   }
 
   const groupsForView = useMemo(() => {
@@ -185,14 +240,15 @@ export function BoardPage({
       nextInboxCount,
     );
     const selectedView = nextBoardViews[selectedIndex];
+    // 视图列表一到就定下当前视图：等 Todo 拉回来再定的话，这段时间里「当前视图」还是第一个视图，
+    // 期间触发的刷新（例如 Bot 状态变化）会拉错视图的 Todo
+    setCurrentGroupIndex(0);
+    setCurrentBoardViewIndex(selectedIndex);
     await loadTodosForView(selectedView?.id);
     if (selectedView && savedBoardViewId && selectedView.id !== savedBoardViewId) {
       await saveSelectedBoardViewId(selectedView.id);
     }
     setLoading(false);
-
-    setCurrentGroupIndex(0);
-    setCurrentBoardViewIndex(selectedIndex);
   }, [loadTodosForView]);
 
   useEffect(() => {
@@ -219,6 +275,19 @@ export function BoardPage({
   const refreshTodosForCurrentView = useCallback(async () => {
     await loadTodosForView(currentBoardView?.id);
   }, [currentBoardView?.id, loadTodosForView]);
+
+  // Bot 运行结束时可能用 easydo update 改过 Todo，跟着刷新。
+  // 看板首次加载完成前不刷新：那时当前视图可能还没定，刷新会拉错视图的 Todo，盖掉正确的列表
+  const { version: botActivityVersion } = useBotActivity();
+  const refreshTodosRef = useRef(refreshTodosForCurrentView);
+  refreshTodosRef.current = refreshTodosForCurrentView;
+  const viewReadyRef = useRef(false);
+  viewReadyRef.current = !loading && Boolean(currentBoardView?.id);
+  useEffect(() => {
+    if (botActivityVersion > 0 && viewReadyRef.current) {
+      void refreshTodosRef.current();
+    }
+  }, [botActivityVersion]);
 
   useEffect(() => {
     function handleWindowBlur() {
@@ -294,6 +363,114 @@ export function BoardPage({
     }
   }
 
+  // 每个视图分别记住列表 / 画布，以及画布上每条 Todo 的位置
+  const currentBoardViewId = currentBoardView?.id ?? null;
+  useEffect(() => {
+    if (!currentBoardViewId || isInboxView) {
+      setLayoutMode("list");
+      return;
+    }
+    let cancelled = false;
+    getBoardLayoutMode(currentBoardViewId)
+      .then((mode) => {
+        if (!cancelled) {
+          setLayoutMode(mode);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLayoutMode("list");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentBoardViewId, isInboxView]);
+
+  useEffect(() => {
+    if (!canvasMode || !currentBoardViewId || canvasPositionsViewId === currentBoardViewId) {
+      return;
+    }
+    let cancelled = false;
+    listCanvasPositions(currentBoardViewId)
+      .then((positions) => {
+        if (cancelled) {
+          return;
+        }
+        setCanvasPositions(new Map(positions.map((position) => [position.todoId, position])));
+        setCanvasPositionsViewId(currentBoardViewId);
+      })
+      .catch((nextError) => {
+        if (!cancelled) {
+          setError(String(nextError));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canvasMode, currentBoardViewId, canvasPositionsViewId]);
+
+  async function handleChangeLayoutMode(mode: BoardLayoutMode) {
+    if (!currentBoardViewId || mode === layoutMode) {
+      return;
+    }
+    setLayoutMode(mode);
+    try {
+      await saveBoardLayoutMode(currentBoardViewId, mode);
+    } catch (nextError) {
+      setError(String(nextError));
+    }
+  }
+
+  function toggleLayoutMode() {
+    if (isInboxView) {
+      return;
+    }
+    void handleChangeLayoutMode(layoutMode === "canvas" ? "list" : "canvas");
+  }
+
+  const handlePlaceCanvasTodos = useCallback(
+    (positions: CanvasPosition[]) => {
+      if (!currentBoardViewId) {
+        return;
+      }
+      setCanvasPositions((current) => {
+        const next = new Map(current);
+        for (const position of positions) {
+          next.set(position.todoId, position);
+        }
+        return next;
+      });
+      const summary = positions
+        .map((position) => `${shortId(position.todoId)}${fmtPoint(position.x, position.y)}`)
+        .join(" ");
+      saveCanvasPositions(currentBoardViewId, positions)
+        .then(() => logCanvas(`save ok view=${shortId(currentBoardViewId)} ${summary}`))
+        .catch((nextError) => {
+          logCanvas(`save failed view=${shortId(currentBoardViewId)} ${summary} error=${String(nextError)}`);
+          setError(String(nextError));
+        });
+    },
+    [currentBoardViewId],
+  );
+
+  // 收件箱也是看板里的一个视图：在收件箱里点侧栏「看板」时，回到上一次的普通视图
+  function handleSidebarNavigate(target: AppView) {
+    if (target !== "board" || !isInboxView) {
+      onNavigate(target);
+      return;
+    }
+    const candidates = [
+      boardViews.findIndex((view) => view.id === lastRegularBoardViewIdRef.current),
+      boardViews.findIndex((view) => view.systemKey === "all"),
+      boardViews.findIndex((view) => view.systemKey !== "inbox"),
+    ];
+    const index = candidates.find((candidate) => candidate >= 0);
+    if (index !== undefined) {
+      void selectBoardView(index, "left");
+    }
+  }
+
   async function submitTodo() {
     const detail = input.trim();
     if (!detail || !currentGroup) {
@@ -303,6 +480,21 @@ export function BoardPage({
     setLastCreatedTodoId(created.id);
     setInput("");
     await refreshTodosForCurrentView();
+  }
+
+  // 画布上双击空白处新建：落到录入框当前选中的 Group，并先记下位置，免得被自动排版挪走
+  async function createTodoAt(detail: string, x: number, y: number) {
+    if (!currentGroup) {
+      return;
+    }
+    setError(null);
+    try {
+      const created = await createTodo(detail, [currentGroup.id]);
+      handlePlaceCanvasTodos([{ todoId: created.id, x, y, width: null, height: null }]);
+      await refreshTodosForCurrentView();
+    } catch (nextError) {
+      setError(String(nextError));
+    }
   }
 
   async function handleSetBoardViewGroupMembership(groupId: string, included: boolean) {
@@ -361,6 +553,35 @@ export function BoardPage({
     } catch (nextError) {
       setError(String(nextError));
     }
+  }
+
+  async function handleSetTodoSuspended(id: string, suspended: boolean) {
+    const todo = todos.find((item) => item.id === id);
+    if (!todo || (todo.suspendedAt !== null) === suspended) {
+      return;
+    }
+    setError(null);
+    try {
+      const updated = await setTodoSuspended(id, suspended);
+      setTodos((items) => items.map((item) => (item.id === id ? updated : item)));
+      if (!suspended) {
+        selectTodo(updated.id);
+      }
+    } catch (nextError) {
+      setError(String(nextError));
+    }
+  }
+
+  function toggleSuspendedExpanded(groupId: string) {
+    setExpandedSuspendedGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
   }
 
   function startEditingTodo(id: string) {
@@ -445,17 +666,24 @@ export function BoardPage({
     position: "before" | "after",
   ) {
     const currentGroupTodos = todosByGroup.get(groupId) ?? [];
-    const draggedIndex = currentGroupTodos.findIndex((todo) => todo.id === draggedTodoId);
-    const targetIndex = currentGroupTodos.findIndex((todo) => todo.id === targetTodoId);
+    const activeTodos = currentGroupTodos.filter((todo) => todo.suspendedAt === null);
+    const draggedIndex = activeTodos.findIndex((todo) => todo.id === draggedTodoId);
+    const targetIndex = activeTodos.findIndex((todo) => todo.id === targetTodoId);
     if (draggedIndex === -1 || targetIndex === -1) {
       return;
     }
 
-    const orderedIds = currentGroupTodos.map((todo) => todo.id);
-    orderedIds.splice(draggedIndex, 1);
-    const targetIndexAfterRemoval = orderedIds.indexOf(targetTodoId);
+    const orderedActiveIds = activeTodos.map((todo) => todo.id);
+    orderedActiveIds.splice(draggedIndex, 1);
+    const targetIndexAfterRemoval = orderedActiveIds.indexOf(targetTodoId);
     const insertIndex = position === "before" ? targetIndexAfterRemoval : targetIndexAfterRemoval + 1;
-    orderedIds.splice(insertIndex, 0, draggedTodoId);
+    orderedActiveIds.splice(insertIndex, 0, draggedTodoId);
+
+    // 挂起的 Todo 保持原有槽位不动，只重排未挂起的 Todo，取消挂起后才能回到原位置
+    let nextActiveIndex = 0;
+    const orderedIds = currentGroupTodos.map((todo) =>
+      todo.suspendedAt === null ? orderedActiveIds[nextActiveIndex++] : todo.id,
+    );
 
     if (orderedIds.join("|") === currentGroupTodos.map((todo) => todo.id).join("|")) {
       return;
@@ -533,7 +761,7 @@ export function BoardPage({
       currentIndex === -1
         ? fallbackIndex
         : Math.max(0, Math.min(visibleTodoIds.length - 1, currentIndex + direction));
-    selectTodo(visibleTodoIds[nextIndex]);
+    selectTodo(visibleTodoIds[nextIndex], { highlight: true });
   }
 
   useEffect(() => {
@@ -571,6 +799,12 @@ export function BoardPage({
       if (!isTextInput && event.key === "Enter" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
         event.preventDefault();
         startEditingSelectedTodo();
+        return;
+      }
+
+      if (event.key === "Tab" && event.altKey && !isTextInput) {
+        event.preventDefault();
+        toggleLayoutMode();
         return;
       }
 
@@ -639,7 +873,7 @@ export function BoardPage({
         groups={regularGroups}
         showBoardControls
         shortcutSettings={shortcutSettings}
-        onNavigate={onNavigate}
+        onNavigate={handleSidebarNavigate}
         onToggleCollapsed={onToggleSidebar}
         onSelectGroup={setCurrentGroupIndex}
         onSetBoardViewGroupMembership={(groupId, included) => {
@@ -652,7 +886,15 @@ export function BoardPage({
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="shrink-0 border-b border-easydo-borderSoft bg-easydo-bg/80 px-3 py-1.5 backdrop-blur">
+        <header
+          data-tauri-drag-region
+          className={cn(
+            "flex h-11 shrink-0 items-center gap-3 border-b border-easydo-borderSoft bg-easydo-surfaceWarm px-4",
+            // 侧栏折叠时顶栏让出红绿灯；展开按钮到红绿灯、到标题的距离都约 23px
+            sidebarCollapsed && "pl-[calc(var(--traffic-light-inset)+14px)]",
+          )}
+        >
+          {sidebarCollapsed ? <SidebarExpandButton onClick={onToggleSidebar} /> : null}
           <BoardViewSwitcher
             boardViews={regularBoardViews}
             currentIndex={regularBoardViewIndex}
@@ -668,31 +910,102 @@ export function BoardPage({
               }
             }}
           />
-          {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+          {error ? <p className="truncate text-sm text-destructive">{error}</p> : null}
+          <div className="ml-auto flex shrink-0">
+            <MessagesButton />
+          </div>
+          {!isInboxView && currentBoardView ? (
+            <div
+              role="group"
+              aria-label="看板布局"
+              className="flex shrink-0 rounded-lg border border-easydo-borderSoft bg-easydo-bgSoft p-0.5"
+            >
+              {(
+                [
+                  ["list", "列表"],
+                  ["canvas", "画布"],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={layoutMode === mode}
+                  onClick={() => void handleChangeLayoutMode(mode)}
+                  className={cn(
+                    "h-6 rounded-md px-2.5 text-xs transition-colors duration-150",
+                    layoutMode === mode
+                      ? "bg-easydo-surface text-easydo-cream shadow-easydo-lavender"
+                      : "text-easydo-textMuted hover:text-easydo-cream",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </header>
 
-        <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-3 py-3">
+        {canvasMode ? (
+          <main className="bg-dot-grid flex min-h-0 flex-1 flex-col overflow-hidden">
+            <BoardCanvas
+              // 切换 View 时相机回到左上角、100%
+              key={currentBoardViewId}
+              todos={canvasTodos}
+              suspendedTodos={canvasSuspendedTodos}
+              positions={canvasPositionsViewId === currentBoardViewId ? canvasPositions : EMPTY_POSITIONS}
+              positionsReady={canvasPositionsViewId === currentBoardViewId}
+              selectedTodoId={highlightedTodoId}
+              editingTodoId={editingTodoId}
+              editingDetail={editingDetail}
+              editingError={editingError}
+              onSelectTodo={selectTodo}
+              onStartEditingTodo={startEditingTodo}
+              onChangeEditingDetail={setEditingDetail}
+              onSaveEditingTodo={() => void saveEditingTodo()}
+              onBlurEditingTodo={() => void saveEditingTodo()}
+              onCancelEditingTodo={cancelEditingTodo}
+              onToggleTodoChecklistLine={(id, lineIndex) => void toggleTodoChecklistLine(id, lineIndex)}
+              onCompleteTodo={(id) => void handleCompleteTodo(id)}
+              onReopenTodo={(id) => void handleReopenTodo(id)}
+              onArchiveTodo={(id) => void handleArchiveTodo(id)}
+              onSetTodoPriority={(id, priority) => void handleSetTodoPriority(id, priority)}
+              onSetTodoSuspended={(id, suspended) => void handleSetTodoSuspended(id, suspended)}
+              onPlaceTodos={handlePlaceCanvasTodos}
+              onCreateTodoAt={(detail, x, y) => void createTodoAt(detail, x, y)}
+              onShowSuspended={() => {
+                setExpandedSuspendedGroupIds(new Set(groupsForView.map((group) => group.id)));
+                void handleChangeLayoutMode("list");
+              }}
+            />
+          </main>
+        ) : (
+        <main
+          className={cn(
+            "bg-dot-grid flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-6 pb-2",
+            isInboxView ? "pt-0" : "pt-5",
+          )}
+        >
           {isInboxView ? (
             <div
               data-inbox-banner
-              className="shrink-0 border border-easydo-borderSoft bg-muted/60 px-3 py-2 text-sm text-easydo-textSecondary"
+              className="-mx-6 shrink-0 border-b border-easydo-borderSoft bg-easydo-surfaceWarm px-6 py-1 text-xs text-easydo-textMuted"
             >
               收件箱仅暂存 Todo。请将 Todo 拖到左侧普通 Group 永久保留；未整理的 Todo 会在次日 03:00 后自动删除。
             </div>
           ) : null}
           {groupsForView.length === 0 ? (
-            <div className="grid h-full place-items-center border border-dashed border-border bg-card/40 px-4 text-center text-sm text-muted-foreground">
+            <div className="grid h-full place-items-center rounded-xl border border-dashed border-easydo-border bg-easydo-surface/60 px-4 text-center text-sm text-easydo-textMuted">
               当前 View 暂无 Group，可从左侧栏添加
             </div>
           ) : (
-            <div className="no-scrollbar flex min-h-0 flex-1 min-w-full gap-3 overflow-x-auto">
+            <div className="no-scrollbar flex min-h-0 flex-1 min-w-full gap-4 overflow-x-auto">
               {groupsForView.map((group) => (
                 <GroupSection
                   key={group.id}
                   group={group}
                   todos={todosByGroup.get(group.id) ?? []}
                   scrollToTodoId={lastCreatedTodoId}
-                  selectedTodoId={selectedTodoId}
+                  selectedTodoId={highlightedTodoId}
                   editingTodoId={editingTodoId}
                   editingDetail={editingDetail}
                   editingError={editingError}
@@ -713,6 +1026,9 @@ export function BoardPage({
                   onReopenTodo={(id) => void handleReopenTodo(id)}
                   onArchiveTodo={(id) => void handleArchiveTodo(id)}
                   onSetTodoPriority={(id, priority) => void handleSetTodoPriority(id, priority)}
+                  onSetTodoSuspended={(id, suspended) => void handleSetTodoSuspended(id, suspended)}
+                  suspendedExpanded={expandedSuspendedGroupIds.has(group.id)}
+                  onToggleSuspendedExpanded={() => toggleSuspendedExpanded(group.id)}
                   dragState={dragState}
                   onDragStartTodo={(groupId, draggedTodoId) => {
                     setDragState({ groupId, draggedTodoId, targetTodoId: null, position: "before" });
@@ -724,11 +1040,13 @@ export function BoardPage({
                   }}
                   onDragEndTodo={clearDragState}
                   externalDndContext={isInboxView}
+                  fullWidth={groupsForView.length === 1}
                 />
               ))}
             </div>
           )}
         </main>
+        )}
 
         <TodoInput
           value={input}
@@ -739,12 +1057,15 @@ export function BoardPage({
           onSelectGroup={setCurrentGroupIndex}
           onNextGroup={nextInputGroup}
           onNextBoardView={() => void nextBoardView()}
+          onToggleLayout={toggleLayoutMode}
         />
       </div>
     </div>
     </DndContext>
   );
 }
+
+const EMPTY_POSITIONS = new Map<string, CanvasPosition>();
 
 function resolveInitialBoardViewIndex(
   boardViews: BoardView[],

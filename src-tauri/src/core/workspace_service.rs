@@ -189,15 +189,11 @@ pub fn reorder_todos_in_group(
         }
     }
 
-    let now = now_iso();
+    // 排序不是工作内容变更，不刷新 updated_at，否则整组 Todo 都会出现在当天的 Daily 中
     for (index, todo_id) in todo_ids.iter().enumerate() {
         tx.execute(
             "UPDATE todo_groups SET sort_order = ?1 WHERE group_id = ?2 AND todo_id = ?3",
             params![index as i64, group_id, todo_id],
-        )?;
-        tx.execute(
-            "UPDATE todos SET updated_at = ?1 WHERE id = ?2",
-            params![now, todo_id],
         )?;
     }
     tx.commit()?;
@@ -290,6 +286,60 @@ mod tests {
                 .expect("remove group");
 
         assert!(updated.groups.is_empty());
+    }
+
+    #[test]
+    fn reorder_todos_keeps_updated_at() {
+        let mut conn = test_database();
+        let work_group = list_groups(&conn)
+            .expect("list groups")
+            .into_iter()
+            .find(|group| group.name == "工作")
+            .expect("work group");
+        let mut ids = Vec::new();
+        for detail in ["第一条", "第二条"] {
+            let todo = crate::core::todo_service::create_todo(
+                &mut conn,
+                crate::core::todo_service::CreateTodoInput {
+                    detail: detail.to_string(),
+                    group_ids: vec![work_group.id.clone()],
+                    tag_ids: Vec::new(),
+                },
+            )
+            .expect("create todo");
+            ids.push(todo.id);
+        }
+        conn.execute(
+            "UPDATE todos SET updated_at = '2026-06-01T00:00:00.000Z'",
+            [],
+        )
+        .expect("set updated_at");
+
+        let reversed = vec![ids[1].clone(), ids[0].clone()];
+        reorder_todos_in_group(&mut conn, &work_group.id, &reversed).expect("reorder");
+
+        let rows: Vec<(String, i64, String)> = conn
+            .prepare(
+                r#"
+                SELECT todos.id, todo_groups.sort_order, todos.updated_at
+                FROM todos
+                INNER JOIN todo_groups ON todo_groups.todo_id = todos.id
+                WHERE todo_groups.group_id = ?1
+                ORDER BY todo_groups.sort_order ASC
+                "#,
+            )
+            .expect("prepare")
+            .query_map(params![work_group.id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .expect("query")
+            .collect::<std::result::Result<_, _>>()
+            .expect("collect");
+        assert_eq!(
+            rows.iter().map(|row| row.0.clone()).collect::<Vec<_>>(),
+            reversed
+        );
+        assert!(rows.iter().all(|row| row.2 == "2026-06-01T00:00:00.000Z"));
     }
 
     #[test]

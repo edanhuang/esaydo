@@ -14,28 +14,28 @@ export const shortcutActions: Array<{
 }> = [
   {
     id: "openSettings",
-    label: "Open Settings",
-    description: "Show the settings dialog while EasyDo is focused.",
+    label: "打开设置",
+    description: "EasyDo 在前台时打开设置。",
   },
   {
     id: "selectPreviousTodo",
-    label: "Previous Todo",
-    description: "Move selection to the previous visible todo.",
+    label: "上一条",
+    description: "选中上一条可见的 Todo。",
   },
   {
     id: "selectNextTodo",
-    label: "Next Todo",
-    description: "Move selection to the next visible todo.",
+    label: "下一条",
+    description: "选中下一条可见的 Todo。",
   },
   {
     id: "editSelectedTodo",
-    label: "Edit Todo",
-    description: "Edit the selected todo in place.",
+    label: "编辑",
+    description: "就地编辑选中的 Todo。",
   },
   {
     id: "toggleSelectedTodoDone",
-    label: "Complete / Reopen",
-    description: "Toggle the selected todo between active and done.",
+    label: "完成 / 恢复",
+    description: "在进行中和已完成之间切换选中的 Todo。",
   },
 ];
 
@@ -120,14 +120,14 @@ export function validateShortcutSettings(settings: ShortcutSettings): string[] {
   for (const action of shortcutActions) {
     const shortcut = getShortcut(settings, action.id);
     if (!isValidShortcut(shortcut)) {
-      errors.push(`${action.label} has an invalid shortcut.`);
+      errors.push(`「${action.label}」的快捷键无效。`);
       continue;
     }
 
     const signature = shortcutSignature(shortcut);
     const existing = seen.get(signature);
     if (existing) {
-      errors.push(`${action.label} conflicts with ${existing}.`);
+      errors.push(`「${action.label}」与「${existing}」的快捷键冲突。`);
     } else {
       seen.set(signature, action.label);
     }

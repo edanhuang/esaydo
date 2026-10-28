@@ -35,6 +35,19 @@ import {
 import type { BoardView, Group, Todo } from "./types";
 
 vi.mock("./lib/api", () => ({
+  getBoardLayoutMode: vi.fn(async () => "list"),
+  listCanvasPositions: vi.fn(async () => []),
+  saveBoardLayoutMode: vi.fn(async (_id: string, mode: string) => mode),
+  saveCanvasPositions: vi.fn(async () => undefined),
+  appendCanvasLog: vi.fn(async () => undefined),
+  listBots: vi.fn(async () => []),
+  listActiveBotRuns: vi.fn(async () => []),
+  listBotUnread: vi.fn(async () => []),
+  onBotRunsChanged: vi.fn(async () => () => undefined),
+  onConfirmQuit: vi.fn(async () => () => undefined),
+  quitApp: vi.fn(),
+  getTerminalSettings: vi.fn(async () => ({ version: 1, app: "terminal" })),
+  saveTerminalSettings: vi.fn(async (settings: unknown) => settings),
   archiveTodo: vi.fn(),
   chooseSkillInstallDirectory: vi.fn(),
   completeTodo: vi.fn(),
@@ -115,7 +128,7 @@ describe("App settings shortcuts", () => {
     await screen.findByText("已有任务");
     fireEvent.keyDown(window, { key: ",", metaKey: true });
 
-    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "设置" })).toBeInTheDocument();
   });
 
   it("saves Light mode from Settings", async () => {
@@ -123,8 +136,8 @@ describe("App settings shortcuts", () => {
 
     await screen.findByText("已有任务");
     fireEvent.keyDown(window, { key: ",", metaKey: true });
-    fireEvent.click(screen.getByRole("radio", { name: "Light" }));
-    fireEvent.click(screen.getByText("Save"));
+    fireEvent.click(screen.getByRole("radio", { name: "浅色" }));
+    fireEvent.click(screen.getByText("保存"));
 
     await waitFor(() => {
       expect(saveAppearanceSettings).toHaveBeenCalledWith({ version: 1, mode: "light" });
@@ -189,6 +202,7 @@ function makeTodo(id: string, detail: string, status: Todo["status"], todoGroups
     detail,
     status,
     priority: "normal",
+    suspendedAt: null,
     extraText: null,
     groups: todoGroups,
     tags: [],

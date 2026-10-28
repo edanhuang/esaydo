@@ -11,6 +11,7 @@ use easydo_lib::core::error::{EasyDoError, ErrorKind, Result};
 use easydo_lib::core::models::TodoWithRelations;
 use easydo_lib::core::selectors::{resolve_group, resolve_todo_id, resolve_view};
 use easydo_lib::core::skills::{install_skills, AgentTarget, SkillCatalog, SkillInstallResult};
+use easydo_lib::core::workspace_service;
 use easydo_lib::core::todo_service::{
     self, CreateTodoInput, TimeField, TimeRange, TodoFilter, TodoPriority, TodoStatus,
 };
@@ -45,6 +46,8 @@ enum Commands {
     },
     /// 将收件箱 Todo 迁移到普通 Group
     Move(MoveArgs),
+    /// 列出全部 Group（包括还没有 Todo 的）
+    Groups(GroupsArgs),
     /// 修改 Todo 内容
     Update(UpdateArgs),
     /// 标记 Todo 属性
@@ -58,6 +61,15 @@ enum Commands {
         #[command(subcommand)]
         command: SkillCommands,
     },
+}
+
+#[derive(Debug, Args)]
+#[command(
+    after_help = "示例:\n  easydo groups\n  easydo groups --json\n\n文本输出只列普通 Group；JSON 输出包含收件箱等系统 Group，用 systemKey 区分。"
+)]
+struct GroupsArgs {
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -122,12 +134,18 @@ struct UpdateArgs {
 
 #[derive(Debug, Args)]
 #[command(
-    after_help = "示例:\n  easydo mark <todo-id> --priority high --json\n  easydo mark <todo-id> --priority normal"
+    after_help = "示例:\n  easydo mark <todo-id> --priority high --json\n  easydo mark <todo-id> --priority normal\n  easydo mark <todo-id> --suspend\n  easydo mark <todo-id> --resume"
 )]
 struct MarkArgs {
     selector: String,
     #[arg(long)]
     priority: Option<String>,
+    /// 挂起 Todo，Board 中折叠到所属 Group 底部
+    #[arg(long, conflicts_with = "resume")]
+    suspend: bool,
+    /// 取消挂起，回到原排序位置
+    #[arg(long)]
+    resume: bool,
     #[arg(long)]
     json: bool,
 }
@@ -245,6 +263,17 @@ fn run(cli: Cli) -> Result<()> {
                         print_todo(&todo, args.json)
                     }
                 },
+                Commands::Groups(args) => {
+                    let groups = workspace_service::list_groups(&conn)?;
+                    if args.json {
+                        println!("{}", serde_json::to_string_pretty(&groups)?);
+                    } else {
+                        for group in groups.iter().filter(|group| group.system_key.is_none()) {
+                            println!("{}", group.name);
+                        }
+                    }
+                    Ok(())
+                }
                 Commands::Move(args) => {
                     let id = resolve_todo_id(&conn, &args.selector)?;
                     let group = resolve_group(&conn, &args.group)?;
@@ -263,14 +292,26 @@ fn run(cli: Cli) -> Result<()> {
                         .as_deref()
                         .map(parse_todo_priority)
                         .transpose()?;
-                    if let Some(priority) = priority {
-                        let todo = todo_service::set_todo_priority(&mut conn, &id, priority)?;
-                        print_todo(&todo, args.json)
+                    let suspended = if args.suspend {
+                        Some(true)
+                    } else if args.resume {
+                        Some(false)
                     } else {
-                        Err(EasyDoError::invalid(
+                        None
+                    };
+                    if priority.is_none() && suspended.is_none() {
+                        return Err(EasyDoError::invalid(
                             "至少需要指定一个标记参数，如 --priority high",
-                        ))
+                        ));
                     }
+                    let mut todo = None;
+                    if let Some(priority) = priority {
+                        todo = Some(todo_service::set_todo_priority(&mut conn, &id, priority)?);
+                    }
+                    if let Some(suspended) = suspended {
+                        todo = Some(todo_service::set_todo_suspended(&mut conn, &id, suspended)?);
+                    }
+                    print_todo(&todo.expect("at least one mark applied"), args.json)
                 }
                 Commands::Done(args) => {
                     let id = resolve_todo_id(&conn, &args.selector)?;
@@ -515,6 +556,9 @@ fn todo_marks(todo: &TodoWithRelations) -> String {
     if todo.priority == "high" {
         marks.push("high");
     }
+    if todo.suspended_at.is_some() {
+        marks.push("suspended");
+    }
     marks.join(",")
 }
 
@@ -586,6 +630,7 @@ mod tests {
             detail: "第一行\n第二行".to_string(),
             status: "active".to_string(),
             priority: "normal".to_string(),
+            suspended_at: None,
             extra_text: None,
             created_at: String::new(),
             updated_at: String::new(),

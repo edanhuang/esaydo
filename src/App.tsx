@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { BotActivityProvider } from "./components/bots/BotActivity";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import {
   getAppearanceSettings,
@@ -11,6 +12,7 @@ import {
 import { defaultShortcutSettings, shortcutMatches } from "./lib/shortcuts";
 import { applyResolvedTheme, defaultAppearanceSettings, resolveThemeMode } from "./lib/theme";
 import { BoardPage } from "./pages/BoardPage";
+import { BotsPage } from "./pages/BotsPage";
 import { DailyPage } from "./pages/WeeklyPage";
 import type { AppearanceSettings, AppView, ShortcutSettings } from "./types";
 
@@ -76,6 +78,8 @@ export default function App() {
     setAppearanceSettings(saved);
   }
 
+  const openBotsPage = useCallback(() => setView("bots"), []);
+
   function handleToggleSidebar() {
     setSidebarCollapsed((collapsed) => {
       const next = !collapsed;
@@ -87,13 +91,15 @@ export default function App() {
   }
 
   return (
-    <>
+    <BotActivityProvider onOpenBotsPage={openBotsPage}>
       {view === "daily" ? (
         <DailyPage
           onNavigate={setView}
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={handleToggleSidebar}
         />
+      ) : view === "bots" ? (
+        <BotsPage onNavigate={setView} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={handleToggleSidebar} />
       ) : (
         <BoardPage
           onNavigate={setView}
@@ -111,6 +117,6 @@ export default function App() {
         onSaveShortcuts={handleSaveSettings}
         onSaveAppearance={handleSaveAppearance}
       />
-    </>
+    </BotActivityProvider>
   );
 }

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { BotActivityContext, EMPTY_BOT_ACTIVITY } from "../components/bots/BotActivity";
 import { BoardPage } from "./BoardPage";
 import {
   archiveTodo,
@@ -8,21 +9,31 @@ import {
   countInboxTodos,
   createTodo,
   deleteTodo,
+  getBoardLayoutMode,
   getSelectedBoardViewId,
+  listCanvasPositions,
   listBoardViews,
   listGroups,
   listTodos,
   moveTodoFromInbox,
   reopenTodo,
   reorderTodosInGroup,
+  saveBoardLayoutMode,
+  saveCanvasPositions,
   saveSelectedBoardViewId,
   setBoardViewGroupMembership,
   setTodoPriority,
+  setTodoSuspended,
   updateTodoDetail,
 } from "../lib/api";
 import type { BoardView, Group, Todo } from "../types";
 
 vi.mock("../lib/api", () => ({
+  getBoardLayoutMode: vi.fn(async () => "list"),
+  listCanvasPositions: vi.fn(async () => []),
+  saveBoardLayoutMode: vi.fn(async (_id: string, mode: string) => mode),
+  saveCanvasPositions: vi.fn(async () => undefined),
+  appendCanvasLog: vi.fn(async () => undefined),
   archiveTodo: vi.fn(),
   completeTodo: vi.fn(),
   countInboxTodos: vi.fn(),
@@ -38,6 +49,7 @@ vi.mock("../lib/api", () => ({
   saveSelectedBoardViewId: vi.fn(),
   setBoardViewGroupMembership: vi.fn(),
   setTodoPriority: vi.fn(),
+  setTodoSuspended: vi.fn(),
   updateTodoDetail: vi.fn(),
 }));
 
@@ -137,6 +149,14 @@ describe("BoardPage", () => {
       todos = todos.map((todo) => (todo.id === id ? updated : todo));
       return updated;
     });
+    vi.mocked(setTodoSuspended).mockImplementation(async (id, suspended) => {
+      const updated = {
+        ...todos.find((todo) => todo.id === id)!,
+        suspendedAt: suspended ? "2026-06-04T11:00:00.000Z" : null,
+      };
+      todos = todos.map((todo) => (todo.id === id ? updated : todo));
+      return updated;
+    });
     vi.mocked(archiveTodo).mockImplementation(async (id) => {
       const updated = {
         ...todos.find((todo) => todo.id === id)!,
@@ -156,11 +176,57 @@ describe("BoardPage", () => {
     });
   });
 
+  it("Bot 状态先于看板视图加载完时，不会不带视图去拉全部 Todo", async () => {
+    // 启动时 Bot 状态已经刷新过一次（version > 0），看板视图还在加载
+    render(
+      <BotActivityContext.Provider value={{ ...EMPTY_BOT_ACTIVITY, version: 1 }}>
+        <BoardPage onNavigate={vi.fn()} />
+      </BotActivityContext.Provider>,
+    );
+
+    await waitFor(() => expect(listTodos).toHaveBeenCalled());
+    expect(listTodos).not.toHaveBeenCalledWith(undefined);
+  });
+
+  it("启动时 Bot 状态在 Todo 还没拉回来时刷新，不会拉错视图的 Todo", async () => {
+    vi.mocked(getSelectedBoardViewId).mockResolvedValue("work-view");
+    let releaseWork: () => void = () => undefined;
+    const workReady = new Promise<void>((resolve) => {
+      releaseWork = resolve;
+    });
+    const loadTodos = vi.mocked(listTodos).getMockImplementation()!;
+    vi.mocked(listTodos).mockImplementation(async (boardViewId) => {
+      // 「工作」视图的 Todo 晚一点回来，模拟启动时的网络 / 数据库延迟
+      if (boardViewId === "work-view") {
+        await workReady;
+      }
+      return loadTodos(boardViewId);
+    });
+
+    const { rerender } = render(
+      <BotActivityContext.Provider value={{ ...EMPTY_BOT_ACTIVITY, version: 0 }}>
+        <BoardPage onNavigate={vi.fn()} />
+      </BotActivityContext.Provider>,
+    );
+    await waitFor(() => expect(listTodos).toHaveBeenCalledWith("work-view"));
+    // 这时 Bot 状态刷新了一次
+    rerender(
+      <BotActivityContext.Provider value={{ ...EMPTY_BOT_ACTIVITY, version: 1 }}>
+        <BoardPage onNavigate={vi.fn()} />
+      </BotActivityContext.Provider>,
+    );
+    releaseWork();
+
+    await waitFor(() => expect(within(getViewSwitcher()).getByText("工作")).toBeInTheDocument());
+    expect(listTodos).not.toHaveBeenCalledWith("all");
+    expect(listTodos).not.toHaveBeenCalledWith(undefined);
+  });
+
   it("creates a detail-only todo with Enter and ignores empty input", async () => {
     const user = userEvent.setup();
     render(<BoardPage onNavigate={vi.fn()} />);
 
-    const input = await screen.findByPlaceholderText("输入一条 Todo，按 Enter 保存");
+    const input = await screen.findByPlaceholderText("要做点什么");
     expect(input.tagName).toBe("TEXTAREA");
     await user.keyboard("[Enter]");
     expect(createTodo).not.toHaveBeenCalled();
@@ -179,7 +245,7 @@ describe("BoardPage", () => {
     render(<BoardPage onNavigate={vi.fn()} />);
 
     const input = await screen.findByPlaceholderText(
-      "输入一条 Todo，按 Enter 保存",
+      "要做点什么",
     ) as HTMLTextAreaElement;
     Object.defineProperty(input, "scrollHeight", {
       configurable: true,
@@ -202,7 +268,7 @@ describe("BoardPage", () => {
     const user = userEvent.setup();
     render(<BoardPage onNavigate={vi.fn()} />);
 
-    await screen.findByPlaceholderText("输入一条 Todo，按 Enter 保存");
+    await screen.findByPlaceholderText("要做点什么");
     await user.click(getInputGroupLabel());
     await user.click(await screen.findByRole("option", { name: "学习" }));
 
@@ -212,7 +278,7 @@ describe("BoardPage", () => {
   it("does not create a todo while the input IME composition is active", async () => {
     render(<BoardPage onNavigate={vi.fn()} />);
 
-    const input = await screen.findByPlaceholderText("输入一条 Todo，按 Enter 保存");
+    const input = await screen.findByPlaceholderText("要做点什么");
     fireEvent.change(input, { target: { value: "pin" } });
     fireEvent.compositionStart(input);
     fireEvent.keyDown(input, { key: "Enter" });
@@ -225,7 +291,7 @@ describe("BoardPage", () => {
     const user = userEvent.setup();
     render(<BoardPage onNavigate={vi.fn()} />);
 
-    const input = await screen.findByPlaceholderText("输入一条 Todo，按 Enter 保存");
+    const input = await screen.findByPlaceholderText("要做点什么");
     expect(getInputGroupLabel()).toHaveTextContent("工作");
 
     await user.click(input);
@@ -243,7 +309,7 @@ describe("BoardPage", () => {
     const user = userEvent.setup();
     render(<BoardPage onNavigate={vi.fn()} />);
 
-    const input = await screen.findByPlaceholderText("输入一条 Todo，按 Enter 保存");
+    const input = await screen.findByPlaceholderText("要做点什么");
     await user.click(input);
     await user.keyboard("[Tab]");
     expect(getInputGroupLabel()).toHaveTextContent("学习");
@@ -303,7 +369,7 @@ describe("BoardPage", () => {
     const user = userEvent.setup();
     render(<BoardPage onNavigate={vi.fn()} />);
 
-    const input = await screen.findByPlaceholderText("输入一条 Todo，按 Enter 保存");
+    const input = await screen.findByPlaceholderText("要做点什么");
     await user.click(input);
     await user.keyboard("[ShiftLeft>][Tab][/ShiftLeft]");
     await waitFor(() => expect(listTodos).toHaveBeenLastCalledWith("work-view"));
@@ -337,7 +403,7 @@ describe("BoardPage", () => {
     const user = userEvent.setup();
     render(<BoardPage onNavigate={vi.fn()} />);
 
-    const input = await screen.findByPlaceholderText("输入一条 Todo，按 Enter 保存");
+    const input = await screen.findByPlaceholderText("要做点什么");
     await user.click(input);
     await user.keyboard("[ShiftLeft>][Tab][/ShiftLeft]");
     await waitFor(() => expect(listTodos).toHaveBeenLastCalledWith("work-view"));
@@ -410,6 +476,45 @@ describe("BoardPage", () => {
     await waitFor(() => expect(setTodoPriority).toHaveBeenLastCalledWith("todo-1", "normal"));
     expect(getTodoCardByText("已有任务")).toHaveAttribute("data-priority", "normal");
     expect(screen.queryByTitle("高优")).not.toBeInTheDocument();
+  });
+
+  it("suspends a todo into the collapsed area and resumes it to its original position", async () => {
+    const user = userEvent.setup();
+    todos = [
+      makeTodo("todo-1", "第一条", "active", [groups[0]], 0),
+      makeTodo("todo-2", "第二条", "active", [groups[0]], 1),
+      makeTodo("todo-3", "第三条", "active", [groups[0]], 2),
+    ];
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await screen.findByText("第二条");
+    fireEvent.contextMenu(getTodoCardByText("第二条"));
+    await user.click(await screen.findByRole("menuitem", { name: "挂起" }));
+
+    await waitFor(() => expect(setTodoSuspended).toHaveBeenCalledWith("todo-2", true));
+    await waitFor(() => expect(screen.queryByText("第二条")).not.toBeInTheDocument());
+    const toggle = screen.getByRole("button", { name: /已挂起 1/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(toggle);
+    expect(screen.getByRole("button", { name: /已挂起 1/ })).toHaveAttribute("aria-expanded", "true");
+    expect(getTodoCardByText("第二条")).toHaveAttribute("data-suspended", "true");
+    expect(
+      Array.from(document.querySelectorAll("[data-todo-card]")).map((card) => card.textContent),
+    ).toEqual(["完成第二条归档", "拖拽排序完成第一条归档", "拖拽排序完成第三条归档"]);
+
+    fireEvent.contextMenu(getTodoCardByText("第二条"));
+    await user.click(await screen.findByRole("menuitem", { name: "取消挂起" }));
+
+    await waitFor(() => expect(setTodoSuspended).toHaveBeenLastCalledWith("todo-2", false));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /已挂起/ })).not.toBeInTheDocument(),
+    );
+    const cardTexts = Array.from(document.querySelectorAll("[data-todo-card]")).map(
+      (card) => card.textContent,
+    );
+    expect(cardTexts).toEqual(["第一条", "第二条", "第三条"].map((text) => `拖拽排序完成${text}归档`));
+    expect(reorderTodosInGroup).not.toHaveBeenCalled();
   });
 
   it("edits the selected todo inline with Space and Enter", async () => {
@@ -610,6 +715,263 @@ describe("BoardPage", () => {
     expect(within(getViewSwitcher()).queryByRole("tab", { name: "收件箱" })).not.toBeInTheDocument();
   });
 
+  it("switches to the canvas, lays todos out from the top-left and saves dragged positions", async () => {
+    const user = userEvent.setup();
+    todos = [
+      makeTodo("todo-1", "第一条", "active", [groups[0]], 0),
+      makeTodo("todo-2", "第二条", "active", [groups[0]], 1),
+      { ...makeTodo("todo-3", "挂起的", "active", [groups[0]], 2), suspendedAt: "2026-06-05T00:00:00.000Z" },
+    ];
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await screen.findByText("第一条");
+    await user.click(screen.getByRole("button", { name: "画布" }));
+
+    expect(saveBoardLayoutMode).toHaveBeenCalledWith("all", "canvas");
+    await waitFor(() => expect(saveCanvasPositions).toHaveBeenCalled());
+    const [viewId, placements] = vi.mocked(saveCanvasPositions).mock.calls[0];
+    expect(viewId).toBe("all");
+    expect(placements.map((position) => position.todoId)).toEqual(["todo-1", "todo-2"]);
+    expect(placements[0]).toMatchObject({ x: 24, y: 24 });
+    expect(document.querySelector("[data-board-canvas]")).toBeInTheDocument();
+    expect(screen.queryByText("挂起的")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /已挂起 1/ })).toBeInTheDocument();
+
+    const item = await waitFor(() => {
+      const element = document.querySelector('[data-canvas-item="todo-1"]');
+      expect(element).toBeInTheDocument();
+      return element as HTMLElement;
+    });
+    fireEvent.pointerDown(item, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(item, { pointerId: 1, buttons: 1, clientX: 250, clientY: 180 });
+    fireEvent.pointerUp(item, { pointerId: 1, clientX: 250, clientY: 180 });
+
+    await waitFor(() =>
+      expect(saveCanvasPositions).toHaveBeenLastCalledWith("all", [
+        { todoId: "todo-1", x: 176, y: 104, width: null, height: null },
+      ]),
+    );
+
+    const rightEdge = item.querySelector('[data-resize-handle="e"]') as HTMLElement;
+    fireEvent.pointerDown(rightEdge, { button: 0, pointerId: 2, clientX: 400, clientY: 120 });
+    fireEvent.pointerMove(rightEdge, { pointerId: 2, clientX: 500, clientY: 120 });
+    fireEvent.pointerUp(rightEdge, { pointerId: 2, clientX: 500, clientY: 120 });
+
+    await waitFor(() =>
+      expect(saveCanvasPositions).toHaveBeenLastCalledWith("all", [
+        { todoId: "todo-1", x: 176, y: 104, width: 340, height: null },
+      ]),
+    );
+
+    const topLeft = item.querySelector('[data-resize-handle="nw"]') as HTMLElement;
+    fireEvent.pointerDown(topLeft, { button: 0, pointerId: 3, clientX: 176, clientY: 104 });
+    fireEvent.pointerMove(topLeft, { pointerId: 3, clientX: 136, clientY: 64 });
+    fireEvent.pointerUp(topLeft, { pointerId: 3, clientX: 136, clientY: 64 });
+
+    // jsdom 没有布局，量不到卡片实际高度，起点按最小高度 32 算，再往上拉 40
+    await waitFor(() =>
+      expect(saveCanvasPositions).toHaveBeenLastCalledWith("all", [
+        { todoId: "todo-1", x: 136, y: 64, width: 380, height: 72 },
+      ]),
+    );
+  });
+
+  it("双击画布空白处新建卡片，回车保存到当前位置，空内容不保存", async () => {
+    const user = userEvent.setup();
+    todos = [makeTodo("todo-1", "第一条", "active", [groups[0]], 0)];
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await screen.findByText("第一条");
+    await user.click(screen.getByRole("button", { name: "画布" }));
+    await waitFor(() => expect(document.querySelector('[data-canvas-item="todo-1"]')).toBeInTheDocument());
+    const viewport = document.querySelector("[data-board-canvas] > div") as HTMLElement;
+
+    // 空内容失焦：不新建
+    fireEvent.doubleClick(viewport, { clientX: 400, clientY: 300 });
+    const emptyDraft = await screen.findByRole("textbox", { name: "新建 Todo" });
+    fireEvent.blur(emptyDraft);
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "新建 Todo" })).not.toBeInTheDocument());
+    expect(createTodo).not.toHaveBeenCalled();
+
+    // 双击卡片本身不会新建草稿
+    fireEvent.doubleClick(document.querySelector('[data-canvas-item="todo-1"]') as HTMLElement);
+    expect(screen.queryByRole("textbox", { name: "新建 Todo" })).not.toBeInTheDocument();
+
+    fireEvent.doubleClick(viewport, { clientX: 400, clientY: 300 });
+    const draft = await screen.findByRole("textbox", { name: "新建 Todo" });
+    await user.type(draft, "画布上新建的");
+    fireEvent.keyDown(draft, { key: "Enter" });
+
+    await waitFor(() => expect(createTodo).toHaveBeenCalledWith("画布上新建的", ["work"]));
+    expect(createTodo).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(saveCanvasPositions).toHaveBeenCalledWith("all", [
+        { todoId: "todo-created", x: 388, y: 288, width: null, height: null },
+      ]),
+    );
+    expect(await screen.findByText("画布上新建的")).toBeInTheDocument();
+  });
+
+  it("keeps canvas cards button-free and moves complete and archive into the context menu", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getBoardLayoutMode).mockResolvedValueOnce("canvas");
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await waitFor(() => expect(document.querySelector('[data-canvas-item="todo-1"]')).toBeInTheDocument());
+    const item = document.querySelector('[data-canvas-item="todo-1"]') as HTMLElement;
+    expect(item.querySelectorAll("button")).toHaveLength(0);
+    expect(item.querySelector("[data-canvas-groups]")).toHaveTextContent("工作");
+    expect(within(item).queryByText(/子项/)).not.toBeInTheDocument();
+
+    fireEvent.contextMenu(getTodoCardByText("已有任务"));
+    await user.click(await screen.findByRole("menuitem", { name: "完成" }));
+    await waitFor(() => expect(completeTodo).toHaveBeenCalledWith("todo-1"));
+
+    fireEvent.contextMenu(getTodoCardByText("已有任务"));
+    await user.click(await screen.findByRole("menuitem", { name: "归档" }));
+    await waitFor(() => expect(archiveTodo).toHaveBeenCalledWith("todo-1"));
+  });
+
+  it("reveals canvas subtasks on hover and keeps them open while selected by keyboard", async () => {
+    vi.mocked(getBoardLayoutMode).mockResolvedValueOnce("canvas");
+    todos = [makeTodo("todo-1", "主句\n- [ ] 子项一\n- [x] 子项二", "active", [groups[0]])];
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await waitFor(() => expect(document.querySelector('[data-canvas-item="todo-1"]')).toBeInTheDocument());
+    const rows = () => document.querySelectorAll('[data-canvas-item="todo-1"] [data-checklist-row]');
+    expect(rows()).toHaveLength(2);
+    for (const row of rows()) {
+      expect(row).toHaveClass("hidden");
+    }
+
+    fireEvent.click(getTodoCardByText("主句"));
+    expect(rows()[0]).toHaveClass("hidden");
+
+    fireEvent.keyDown(window, { key: "ArrowDown", metaKey: true });
+
+    await waitFor(() => expect(rows()[0]).toHaveClass("flex"));
+    for (const row of rows()) {
+      expect(row).not.toHaveClass("hidden");
+    }
+  });
+
+  it("skips blank lines on canvas cards but still toggles the right subtask line", async () => {
+    vi.mocked(getBoardLayoutMode).mockResolvedValueOnce("canvas");
+    vi.mocked(updateTodoDetail).mockImplementation(async (id, detail) => ({
+      ...todos.find((todo) => todo.id === id)!,
+      detail,
+    }));
+    todos = [makeTodo("todo-1", "主句\n\n- [ ] 子项一", "active", [groups[0]])];
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await waitFor(() => expect(document.querySelector('[data-canvas-item="todo-1"]')).toBeInTheDocument());
+    const item = document.querySelector('[data-canvas-item="todo-1"]') as HTMLElement;
+    const emptyLines = Array.from(item.querySelectorAll("span.block")).filter((span) => !span.textContent?.trim());
+    expect(emptyLines).toHaveLength(0);
+
+    fireEvent.click(getTodoCardByText("主句"));
+    fireEvent.click(await screen.findByTitle("标记子任务完成"));
+
+    await waitFor(() => expect(updateTodoDetail).toHaveBeenCalledWith("todo-1", "主句\n\n- [x] 子项一"));
+  });
+
+  it("shows the subtasks that fit in a stretched canvas card without hovering", async () => {
+    vi.mocked(getBoardLayoutMode).mockResolvedValueOnce("canvas");
+    vi.mocked(listCanvasPositions).mockResolvedValueOnce([
+      { todoId: "todo-1", x: 24, y: 24, width: null, height: 56 },
+    ]);
+    todos = [makeTodo("todo-1", "主句\n- [ ] 子项一\n- [x] 子项二", "active", [groups[0]])];
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-canvas-item="todo-1"] [data-checklist-row]')).toHaveLength(2),
+    );
+    const [first, second] = document.querySelectorAll('[data-canvas-item="todo-1"] [data-checklist-row]');
+    expect(first).toHaveClass("flex");
+    expect(first).not.toHaveClass("hidden");
+    expect(second).toHaveClass("hidden");
+  });
+
+  it("lets a single-group view fill the width in list mode", async () => {
+    render(<BoardPage onNavigate={vi.fn()} />);
+    await screen.findByText("已有任务");
+    await userEvent.setup().hover(getViewSwitcher());
+    fireEvent.click(await screen.findByRole("tab", { name: "工作" }));
+
+    await waitFor(() => expect(document.querySelectorAll("[data-group-section]")).toHaveLength(1));
+    expect(document.querySelector("[data-group-section]")).toHaveClass("w-full");
+    expect(document.querySelector("[data-group-section]")).not.toHaveClass("min-w-[360px]");
+  });
+
+  it("opens suspended todos in the list view instead of the canvas", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getBoardLayoutMode).mockResolvedValueOnce("canvas");
+    todos = [
+      makeTodo("todo-1", "进行中", "active", [groups[0]]),
+      { ...makeTodo("todo-2", "挂起的", "active", [groups[0]], 1), suspendedAt: "2026-06-05T00:00:00.000Z" },
+    ];
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: /已挂起 1/ }));
+
+    expect(saveBoardLayoutMode).toHaveBeenLastCalledWith("all", "list");
+    await waitFor(() => expect(document.querySelector("[data-board-canvas]")).not.toBeInTheDocument());
+    expect(await screen.findByText("挂起的")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /已挂起 1/ })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("toggles canvas and list with Option Tab from the input and from the page", async () => {
+    render(<BoardPage onNavigate={vi.fn()} />);
+    const input = await screen.findByPlaceholderText("要做点什么");
+    await screen.findByText("已有任务");
+
+    fireEvent.keyDown(input, { key: "Tab", altKey: true });
+    await waitFor(() => expect(document.querySelector("[data-board-canvas]")).toBeInTheDocument());
+    expect(saveBoardLayoutMode).toHaveBeenLastCalledWith("all", "canvas");
+    expect(getInputGroupLabel()).toHaveTextContent("工作");
+
+    fireEvent.keyDown(window, { key: "Tab", altKey: true });
+    await waitFor(() => expect(document.querySelector("[data-board-canvas]")).not.toBeInTheDocument());
+    expect(saveBoardLayoutMode).toHaveBeenLastCalledWith("all", "list");
+  });
+
+  it("restores the canvas layout saved for the view", async () => {
+    vi.mocked(getBoardLayoutMode).mockResolvedValueOnce("canvas");
+    render(<BoardPage onNavigate={vi.fn()} />);
+
+    await screen.findByText("已有任务");
+    await waitFor(() => expect(document.querySelector("[data-board-canvas]")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "画布" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("returns from the inbox to the board when clicking 看板 in the sidebar", async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+    const inboxGroup = { ...makeGroup("inbox", "收件箱", 9), systemKey: "inbox" };
+    const inboxView = {
+      ...makeBoardView("inbox-view", "收件箱", 9, [inboxGroup]),
+      systemKey: "inbox",
+    };
+    todos = [
+      makeTodo("todo-1", "已有任务", "active", [groups[0]]),
+      makeTodo("inbox-todo", "待归类工作", "active", [inboxGroup]),
+    ];
+    vi.mocked(listGroups).mockResolvedValue([...groups, inboxGroup]);
+    vi.mocked(listBoardViews).mockResolvedValue([...boardViews, inboxView]);
+    vi.mocked(countInboxTodos).mockResolvedValue(1);
+    vi.mocked(getSelectedBoardViewId).mockResolvedValue("inbox-view");
+
+    render(<BoardPage onNavigate={onNavigate} />);
+
+    expect(await screen.findByText("待归类工作")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "看板" }));
+
+    expect(await screen.findByText("已有任务")).toBeInTheDocument();
+    expect(screen.queryByText("待归类工作")).not.toBeInTheDocument();
+    expect(saveSelectedBoardViewId).toHaveBeenLastCalledWith("all");
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
   it("keeps the empty inbox page and regular view choices visible", async () => {
     const user = userEvent.setup();
     const inboxGroup = { ...makeGroup("inbox", "收件箱", 9), systemKey: "inbox" };
@@ -684,6 +1046,7 @@ function makeTodo(
     detail,
     status,
     priority: "normal",
+    suspendedAt: null,
     extraText: null,
     groups: todoGroups,
     tags: [],

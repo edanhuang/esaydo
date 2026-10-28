@@ -1,133 +1,267 @@
+@import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* 深色主题由根元素上的 .dark 切换 */
+@custom-variant dark (&:is(.dark *));
+
+/* 颜色都指向运行时变量（浅色 / 深色各一套），用 inline 让工具类直接取变量值 */
+@theme inline {
+  --color-easydo-bg: hsl(var(--easydo-bg));
+  --color-easydo-bgSoft: hsl(var(--easydo-bg-soft));
+  --color-easydo-surface: hsl(var(--easydo-surface));
+  --color-easydo-surfaceWarm: hsl(var(--easydo-surface-warm));
+  --color-easydo-surfaceHover: hsl(var(--easydo-surface-hover));
+  --color-easydo-surfaceActive: hsl(var(--easydo-surface-active));
+  --color-easydo-cream: hsl(var(--easydo-cream));
+  --color-easydo-text: hsl(var(--easydo-text));
+  --color-easydo-textSecondary: hsl(var(--easydo-text-secondary));
+  --color-easydo-textMuted: hsl(var(--easydo-text-muted));
+  --color-easydo-textDisabled: hsl(var(--easydo-text-disabled));
+  --color-easydo-gold: hsl(var(--easydo-gold));
+  --color-easydo-goldHover: hsl(var(--easydo-gold-hover));
+  --color-easydo-goldActive: hsl(var(--easydo-gold-active));
+  --color-easydo-goldSoft: hsl(var(--easydo-gold-soft));
+  --color-easydo-lavender: hsl(var(--easydo-lavender));
+  --color-easydo-lavenderSoft: hsl(var(--easydo-lavender-soft));
+  --color-easydo-lavenderSurface: hsl(var(--easydo-lavender-surface));
+  --color-easydo-violet: hsl(var(--easydo-violet));
+  --color-easydo-border: hsl(var(--easydo-border));
+  --color-easydo-borderSoft: hsl(var(--easydo-border-soft));
+  --color-easydo-borderLavender: hsl(var(--easydo-border-lavender));
+  --color-easydo-success: hsl(var(--easydo-success));
+  --color-easydo-warning: hsl(var(--easydo-warning));
+  --color-easydo-danger: hsl(var(--easydo-danger));
+  --color-easydo-info: hsl(var(--easydo-info));
+  --color-easydo-onAccent: hsl(var(--easydo-on-accent));
+  --color-easydo-grid: hsl(var(--easydo-grid));
+
+  --color-border: hsl(var(--border));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  --font-sans: var(--easydo-font);
+  --font-heading: var(--easydo-font);
+}
+
+/* 全局统一圆角：与画布卡片一致，全部 4px（只有 full 保持正圆）。static：组件里有 var(--radius-md) 这类直接引用，变量要一直输出 */
+@theme static {
+  --radius-xs: 4px;
+  --radius-sm: 4px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+  --radius-2xl: 4px;
+  --radius-3xl: 4px;
+  --radius-4xl: 4px;
+  --radius-easydo: 4px;
+  --radius-easydo-lg: 4px;
+  --radius-easydo-xl: 4px;
+}
+
+/* 全局统一字号：正文和标题都是 13px / 18px，层级靠字重区分 */
+@theme {
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.125rem;
+  --text-base: 0.8125rem;
+  --text-base--line-height: 1.125rem;
+  --text-lg: 0.8125rem;
+  --text-lg--line-height: 1.125rem;
+  --text-xl: 0.8125rem;
+  --text-xl--line-height: 1.125rem;
+
+  --shadow-easydo-card: var(--easydo-shadow-card);
+  --shadow-easydo-card-hover: var(--easydo-shadow-card-hover);
+  --shadow-easydo-card-hover-soft: var(--easydo-shadow-card-hover-soft);
+  --shadow-easydo-glow: var(--easydo-shadow-glow);
+  --shadow-easydo-lavender: var(--easydo-shadow-lavender);
+  --shadow-easydo-composer: var(--easydo-shadow-composer);
+}
 
 :root {
-  --font-heading: var(--font-sans);
-  --font-sans: "Geist Variable", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  /* Terrazzo（Hallmark 主题）：米白纸面、墨黑正文与主按钮、铁锈红只标记完成、选中和高优 */
+  --easydo-font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", sans-serif;
+  --titlebar-height: 44px;
+  --traffic-light-inset: 80px;
 
-  --background: 42 100% 98%;
-  --foreground: 233 47% 13%;
-  --card: 0 0% 100%;
-  --card-foreground: 233 47% 13%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 233 47% 13%;
-  --primary: 40 90% 60%;
-  --primary-foreground: 233 47% 13%;
-  --secondary: 252 100% 96%;
-  --secondary-foreground: 244 45% 36%;
-  --muted: 42 70% 96%;
-  --muted-foreground: 247 16% 54%;
-  --accent: 252 100% 92%;
-  --accent-foreground: 244 45% 36%;
-  --destructive: 354 72% 63%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 42 38% 87%;
-  --input: 42 38% 87%;
-  --ring: 40 90% 60%;
-  --radius: 1rem;
-  --sidebar: 42 100% 96%;
-  --sidebar-foreground: 233 47% 13%;
-  --sidebar-primary: 40 90% 60%;
-  --sidebar-primary-foreground: 233 47% 13%;
-  --sidebar-accent: 252 100% 96%;
-  --sidebar-accent-foreground: 244 45% 36%;
-  --sidebar-border: 42 38% 87%;
-  --sidebar-ring: 40 90% 60%;
+  --background: 43 21% 94%;
+  --foreground: 20 6% 10%;
+  --card: 40 33% 99%;
+  --card-foreground: 20 6% 10%;
+  --popover: 40 33% 99%;
+  --popover-foreground: 20 6% 10%;
+  --primary: 20 6% 10%;
+  --primary-foreground: 43 21% 94%;
+  --secondary: 40 18% 91.6%;
+  --secondary-foreground: 30 6% 19%;
+  --muted: 40 18% 91.6%;
+  --muted-foreground: 30 5% 36%;
+  --accent: 42 15% 89%;
+  --accent-foreground: 20 6% 10%;
+  --destructive: 4 62% 46%;
+  --destructive-foreground: 40 33% 99%;
+  --border: 38 11% 82%;
+  --input: 38 11% 82%;
+  --ring: 16 61% 44%;
+  --radius: 0.25rem;
+  --sidebar: 40 18% 91.6%;
+  --sidebar-foreground: 20 6% 10%;
+  --sidebar-primary: 20 6% 10%;
+  --sidebar-primary-foreground: 43 21% 94%;
+  --sidebar-accent: 40 15% 87%;
+  --sidebar-accent-foreground: 20 6% 10%;
+  --sidebar-border: 38 11% 82%;
+  --sidebar-ring: 16 61% 44%;
 
-  --easydo-bg: 42 100% 98%;
-  --easydo-bg-soft: 42 100% 96%;
-  --easydo-surface: 0 0% 100%;
-  --easydo-surface-warm: 44 100% 98%;
-  --easydo-surface-hover: 42 90% 95%;
-  --easydo-surface-active: 44 90% 91%;
-  --easydo-cream: 233 47% 13%;
-  --easydo-text: 233 47% 13%;
-  --easydo-text-secondary: 232 22% 40%;
-  --easydo-text-muted: 247 16% 54%;
-  --easydo-text-disabled: 252 14% 71%;
-  --easydo-gold: 40 90% 60%;
-  --easydo-gold-hover: 43 100% 71%;
-  --easydo-gold-active: 37 78% 49%;
-  --easydo-gold-soft: 47 100% 87%;
-  --easydo-lavender: 252 100% 83%;
-  --easydo-lavender-soft: 252 100% 95%;
-  --easydo-lavender-surface: 255 100% 98%;
-  --easydo-violet: 246 73% 70%;
-  --easydo-border: 42 38% 87%;
-  --easydo-border-soft: 42 45% 92%;
-  --easydo-border-lavender: 252 100% 91%;
-  --easydo-success: 148 50% 47%;
-  --easydo-warning: 37 78% 49%;
-  --easydo-danger: 354 72% 63%;
-  --easydo-info: 208 73% 55%;
-  --easydo-shadow-card: 0 1px 2px rgba(18, 22, 50, 0.06);
-  --easydo-shadow-glow: 0 0 0 1px rgba(245, 185, 63, 0.22);
-  --easydo-shadow-lavender: 0 0 0 1px rgba(185, 167, 255, 0.18);
+  --easydo-bg: 43 21% 94%;
+  --easydo-bg-soft: 40 18% 91.6%;
+  --easydo-surface: 40 33% 99%;
+  --easydo-surface-warm: 48 20% 96%;
+  --easydo-surface-hover: 42 15% 89%;
+  --easydo-surface-active: 40 15% 87%;
+  --easydo-cream: 20 6% 10%;
+  --easydo-text: 20 6% 10%;
+  --easydo-text-secondary: 30 6% 19%;
+  --easydo-text-muted: 30 5% 36%;
+  --easydo-text-disabled: 34 6% 62%;
+  --easydo-gold: 16 61% 44%;
+  --easydo-gold-hover: 16 58% 50%;
+  --easydo-gold-active: 16 62% 38%;
+  --easydo-gold-soft: 20 56% 89%;
+  --easydo-lavender: 30 5% 36%;
+  --easydo-lavender-soft: 40 15% 87%;
+  --easydo-lavender-surface: 42 15% 89%;
+  --easydo-violet: 30 5% 36%;
+  --easydo-border: 38 11% 82%;
+  --easydo-border-soft: 40 13% 87%;
+  --easydo-border-lavender: 38 11% 82%;
+  --easydo-success: 16 61% 44%;
+  --easydo-warning: 16 61% 44%;
+  --easydo-danger: 4 62% 46%;
+  --easydo-info: 210 30% 42%;
+  --easydo-on-accent: 40 33% 99%;
+  --easydo-grid: 37 10% 78%;
+  --easydo-shadow-card: 0 1px 2px hsl(20 6% 10% / 0.05), 0 4px 14px hsl(20 6% 10% / 0.06);
+  --easydo-shadow-card-hover: 0 1px 2px hsl(20 6% 10% / 0.04), 0 4px 12px hsl(20 6% 10% / 0.07);
+  --easydo-shadow-card-hover-soft: 0 1px 2px hsl(20 6% 10% / 0.03), 0 2px 6px hsl(20 6% 10% / 0.04);
+  --easydo-shadow-glow: 0 0 0 1px hsl(16 61% 44% / 0.28);
+  --easydo-shadow-lavender: 0 0 0 1px hsl(20 6% 10% / 0.08);
+  --easydo-shadow-composer: 0 1px 2px hsl(20 6% 10% / 0.04);
+  --easydo-shadow-composer-focus: 0 2px 6px hsl(20 6% 10% / 0.08);
+
+  /* 引导时压暗页面的蒙版 */
+  --easydo-scrim: hsl(20 6% 10% / 0.32);
+
+  /* Bot 预设色板：避开铁锈红重点色，免得和选中描边、高优底色混淆 */
+  --bot-amber: 36 72% 40%;
+  --bot-olive: 75 32% 34%;
+  --bot-moss: 145 30% 34%;
+  --bot-teal: 182 38% 32%;
+  --bot-indigo: 222 38% 46%;
+  --bot-plum: 300 22% 42%;
+  --bot-rose: 350 45% 46%;
+  --bot-graphite: 30 5% 36%;
 }
 
 .dark {
-  --background: 235 55% 8%;
-  --foreground: 42 100% 95%;
-  --card: 236 43% 16%;
-  --card-foreground: 42 100% 95%;
-  --popover: 236 43% 16%;
-  --popover-foreground: 42 100% 95%;
-  --primary: 45 100% 70%;
-  --primary-foreground: 235 55% 8%;
-  --secondary: 240 37% 24%;
-  --secondary-foreground: 250 45% 86%;
-  --muted: 238 32% 22%;
-  --muted-foreground: 246 22% 58%;
-  --accent: 252 100% 83%;
-  --accent-foreground: 235 55% 8%;
-  --destructive: 354 100% 78%;
-  --destructive-foreground: 235 55% 8%;
-  --border: 235 33% 25%;
-  --input: 235 33% 25%;
-  --ring: 45 100% 70%;
-  --sidebar: 236 47% 12%;
-  --sidebar-foreground: 42 100% 95%;
-  --sidebar-primary: 45 100% 70%;
-  --sidebar-primary-foreground: 235 55% 8%;
-  --sidebar-accent: 240 37% 24%;
-  --sidebar-accent-foreground: 250 45% 86%;
-  --sidebar-border: 235 33% 25%;
-  --sidebar-ring: 45 100% 70%;
+  --background: 20 8% 7.5%;
+  --foreground: 40 27% 93%;
+  --card: 30 6% 12%;
+  --card-foreground: 40 27% 93%;
+  --popover: 30 6% 12%;
+  --popover-foreground: 40 27% 93%;
+  --primary: 40 27% 93%;
+  --primary-foreground: 20 8% 7.5%;
+  --secondary: 30 7% 6%;
+  --secondary-foreground: 38 10% 79%;
+  --muted: 30 6% 12%;
+  --muted-foreground: 34 6% 58%;
+  --accent: 30 5% 14.5%;
+  --accent-foreground: 40 27% 93%;
+  --destructive: 8 70% 62%;
+  --destructive-foreground: 20 8% 7.5%;
+  --border: 36 5% 18%;
+  --input: 36 5% 18%;
+  --ring: 17 70% 59%;
+  --sidebar: 30 7% 6%;
+  --sidebar-foreground: 40 27% 93%;
+  --sidebar-primary: 40 27% 93%;
+  --sidebar-primary-foreground: 20 8% 7.5%;
+  --sidebar-accent: 36 5% 17%;
+  --sidebar-accent-foreground: 40 27% 93%;
+  --sidebar-border: 36 5% 18%;
+  --sidebar-ring: 17 70% 59%;
 
-  --easydo-bg: 235 55% 8%;
-  --easydo-bg-soft: 236 47% 12%;
-  --easydo-surface: 236 43% 16%;
-  --easydo-surface-warm: 236 43% 16%;
-  --easydo-surface-hover: 236 39% 21%;
-  --easydo-surface-active: 235 35% 33%;
-  --easydo-cream: 42 100% 95%;
-  --easydo-text: 42 100% 95%;
-  --easydo-text-secondary: 250 45% 86%;
-  --easydo-text-muted: 246 22% 58%;
-  --easydo-text-disabled: 247 15% 43%;
-  --easydo-gold: 45 100% 70%;
-  --easydo-gold-hover: 47 100% 77%;
-  --easydo-gold-active: 43 80% 58%;
-  --easydo-gold-soft: 45 80% 18%;
-  --easydo-lavender: 252 100% 83%;
-  --easydo-lavender-soft: 252 100% 90%;
-  --easydo-lavender-surface: 252 36% 18%;
-  --easydo-violet: 246 73% 70%;
-  --easydo-border: 235 33% 25%;
-  --easydo-border-soft: 235 32% 19%;
-  --easydo-border-lavender: 252 46% 45%;
-  --easydo-success: 145 61% 73%;
-  --easydo-warning: 45 100% 70%;
-  --easydo-danger: 354 100% 78%;
-  --easydo-info: 209 100% 78%;
-  --easydo-shadow-card: 0 1px 2px rgba(4, 5, 18, 0.32);
-  --easydo-shadow-glow: 0 0 0 1px rgba(255, 217, 102, 0.26);
-  --easydo-shadow-lavender: 0 0 0 1px rgba(185, 167, 255, 0.22);
+  --easydo-bg: 20 8% 7.5%;
+  --easydo-bg-soft: 30 7% 6%;
+  --easydo-surface: 30 6% 12%;
+  --easydo-surface-warm: 20 6% 9%;
+  --easydo-surface-hover: 30 5% 14.5%;
+  --easydo-surface-active: 36 5% 17%;
+  --easydo-cream: 40 27% 93%;
+  --easydo-text: 40 27% 93%;
+  --easydo-text-secondary: 38 10% 79%;
+  --easydo-text-muted: 34 6% 58%;
+  --easydo-text-disabled: 34 5% 38%;
+  --easydo-gold: 17 70% 59%;
+  --easydo-gold-hover: 17 72% 65%;
+  --easydo-gold-active: 17 62% 52%;
+  --easydo-gold-soft: 18 29% 23%;
+  --easydo-lavender: 34 6% 58%;
+  --easydo-lavender-soft: 36 5% 17%;
+  --easydo-lavender-surface: 30 5% 14.5%;
+  --easydo-violet: 34 6% 58%;
+  --easydo-border: 36 5% 18%;
+  --easydo-border-soft: 30 5% 14%;
+  --easydo-border-lavender: 36 5% 18%;
+  --easydo-success: 17 70% 59%;
+  --easydo-warning: 17 70% 59%;
+  --easydo-danger: 8 70% 62%;
+  --easydo-info: 210 40% 66%;
+  --easydo-on-accent: 20 8% 7.5%;
+  --easydo-grid: 36 5% 20%;
+  --easydo-shadow-card: 0 1px 2px hsl(0 0% 0% / 0.3), 0 6px 18px hsl(0 0% 0% / 0.35);
+  --easydo-shadow-card-hover: 0 1px 2px hsl(0 0% 0% / 0.25), 0 4px 12px hsl(0 0% 0% / 0.3);
+  --easydo-shadow-card-hover-soft: 0 1px 2px hsl(0 0% 0% / 0.18), 0 2px 6px hsl(0 0% 0% / 0.2);
+  --easydo-shadow-glow: 0 0 0 1px hsl(17 70% 59% / 0.32);
+  --easydo-shadow-lavender: 0 0 0 1px hsl(0 0% 100% / 0.06);
+  --easydo-shadow-composer: 0 1px 2px hsl(0 0% 0% / 0.22);
+  --easydo-shadow-composer-focus: 0 2px 6px hsl(0 0% 0% / 0.38);
+
+  --easydo-scrim: hsl(0 0% 0% / 0.55);
+
+  --bot-amber: 38 70% 60%;
+  --bot-olive: 74 30% 58%;
+  --bot-moss: 145 28% 56%;
+  --bot-teal: 180 32% 56%;
+  --bot-indigo: 222 50% 68%;
+  --bot-plum: 300 24% 66%;
+  --bot-rose: 350 55% 70%;
+  --bot-graphite: 34 6% 62%;
 }
 
 @layer base {
@@ -174,6 +308,71 @@
 }
 
 @layer utilities {
+  /* 点阵按窗口定位，画布区和输入框那一条拼在一起不错位；画布平移缩放时改这三个变量 */
+  .bg-dot-grid {
+    background-image: radial-gradient(circle, hsl(var(--easydo-grid)) 1px, transparent 1.2px);
+    background-size: var(--dot-grid-size, 20px) var(--dot-grid-size, 20px);
+    background-position: var(--dot-grid-x, 0px) var(--dot-grid-y, 0px);
+    background-attachment: fixed;
+  }
+
+  /* Bot 运行中的呼吸外圈，颜色取自元素上的 --bot-color */
+  .bot-breathing {
+    animation: bot-breathing 1.8s ease-out infinite;
+  }
+
+  /* Bot 空列表的手指提示：朝右上角的新建按钮轻轻点两下 */
+  .bot-hint-nudge {
+    animation: bot-hint-nudge 1.6s ease-in-out infinite;
+  }
+
+  /* 消息抽屉：整体从右侧滑入滑出；右栏切换时按方向轻微滑入 */
+  .drawer-enter {
+    animation: drawer-in 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .drawer-exit {
+    animation: drawer-out 200ms ease-in forwards;
+  }
+
+  .drawer-scrim-enter {
+    animation: fade-in 200ms ease-out;
+  }
+
+  .drawer-scrim-exit {
+    animation: fade-out 200ms ease-in forwards;
+  }
+
+  .drawer-pane-forward {
+    animation: pane-in-forward 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .drawer-pane-back {
+    animation: pane-in-back 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Bot 处理中：笔尖一顿一顿地往右写，底下的线跟着画出来，写满一段抬笔回到开头 */
+  .bot-writing-pen {
+    animation: bot-writing-pen 2s ease-in-out infinite;
+  }
+
+  .bot-writing-line {
+    animation: bot-writing-line 2s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bot-writing-pen,
+    .bot-writing-line,
+    .bot-breathing,
+    .bot-hint-nudge,
+    .drawer-enter,
+    .drawer-pane-forward,
+    .drawer-pane-back,
+    .drawer-scrim-enter {
+      animation: none;
+    }
+  }
+
   .no-scrollbar {
     scrollbar-width: none;
   }
@@ -181,4 +380,239 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+}
+
+@keyframes bot-breathing {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--bot-color) / 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 4px hsl(var(--bot-color) / 0);
+  }
+}
+
+@keyframes bot-hint-nudge {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 2px -4px;
+  }
+}
+
+@keyframes bot-writing-pen {
+  0% {
+    translate: 0 0;
+    rotate: 0deg;
+  }
+  10% {
+    translate: 4px -2px;
+    rotate: -8deg;
+  }
+  20% {
+    translate: 8px 0;
+    rotate: 0deg;
+  }
+  30% {
+    translate: 12px -2px;
+    rotate: -8deg;
+  }
+  40% {
+    translate: 16px 0;
+    rotate: 0deg;
+  }
+  50% {
+    translate: 20px -2px;
+    rotate: -8deg;
+  }
+  60% {
+    translate: 24px 0;
+    rotate: 0deg;
+  }
+  70% {
+    translate: 28px -1px;
+    rotate: -4deg;
+  }
+  80% {
+    translate: 28px -5px;
+    rotate: -12deg;
+  }
+  100% {
+    translate: 0 0;
+    rotate: 0deg;
+  }
+}
+
+@keyframes bot-writing-line {
+  0% {
+    scale: 0 1;
+    opacity: 1;
+  }
+  70% {
+    scale: 0.66 1;
+    opacity: 1;
+  }
+  85% {
+    scale: 0.66 1;
+    opacity: 1;
+  }
+  100% {
+    scale: 0.66 1;
+    opacity: 0;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes drawer-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes pane-in-forward {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+@keyframes pane-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+
+/* 消息里的 Markdown：段落、列表、代码块、表格，字号跟随气泡 */
+.message-markdown {
+  line-height: 1.65;
+}
+
+.message-markdown > * + * {
+  margin-top: 0.5em;
+}
+
+.message-markdown h1,
+.message-markdown h2,
+.message-markdown h3,
+.message-markdown h4 {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.message-markdown h1 {
+  font-size: 1.15em;
+}
+
+.message-markdown h2 {
+  font-size: 1.08em;
+}
+
+.message-markdown ul,
+.message-markdown ol {
+  padding-left: 1.3em;
+}
+
+.message-markdown ul {
+  list-style: disc;
+}
+
+.message-markdown ol {
+  list-style: decimal;
+}
+
+.message-markdown li + li {
+  margin-top: 0.2em;
+}
+
+.message-markdown li > ul,
+.message-markdown li > ol {
+  margin-top: 0.2em;
+}
+
+/* 任务列表：去掉圆点，复选框只展示 */
+.message-markdown li.task-list-item {
+  list-style: none;
+  margin-left: -1.3em;
+}
+
+.message-markdown li.task-list-item input {
+  margin-right: 0.4em;
+  vertical-align: -1px;
+  accent-color: hsl(var(--easydo-gold));
+}
+
+.message-markdown code {
+  border-radius: 4px;
+  background: hsl(var(--easydo-surface-active));
+  padding: 0.1em 0.35em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+}
+
+.message-markdown pre {
+  overflow-x: auto;
+  border-radius: 8px;
+  background: hsl(var(--easydo-bg-soft));
+  border: 1px solid hsl(var(--easydo-border-soft));
+  padding: 0.6em 0.8em;
+}
+
+.message-markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.message-markdown blockquote {
+  border-left: 2px solid hsl(var(--easydo-border));
+  padding-left: 0.8em;
+  color: hsl(var(--easydo-text-secondary));
+}
+
+.message-markdown table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.message-markdown th,
+.message-markdown td {
+  border: 1px solid hsl(var(--easydo-border));
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+
+.message-markdown th {
+  background: hsl(var(--easydo-surface-hover));
+  font-weight: 600;
+}
+
+.message-markdown hr {
+  border-color: hsl(var(--easydo-border-soft));
+}
+
+.message-markdown-link {
+  color: hsl(var(--easydo-gold));
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
