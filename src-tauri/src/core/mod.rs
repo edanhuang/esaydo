@@ -8,6 +8,7 @@ pub mod error;
 pub mod models;
 pub mod selectors;
 pub mod skills;
+pub mod terminal;
 pub mod todo_service;
 pub mod workspace_service;
 

@@ -1,7 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CanvasPosition, Todo } from "../../types";
-import { BoardCanvas } from "./BoardCanvas";
+import { BoardCanvas, CARD_COLLAPSE_DELAY } from "./BoardCanvas";
 
 describe("BoardCanvas", () => {
   it("两指滑动平移画布，往左上滑也可以", () => {
@@ -69,20 +69,118 @@ describe("BoardCanvas", () => {
 
     expect(onPlaceTodos).toHaveBeenLastCalledWith([{ todoId: "todo-1", x: -76, y: -56, width: null, height: null }]);
   });
+
+  it("拉伸从卡片实际高度算起，边缘跟着指针走", () => {
+    const onPlaceTodos = vi.fn();
+    renderCanvas(onPlaceTodos, [makeTodo("todo-1", "主句\n- [ ] 子项一\n- [ ] 子项二")], { height: 40 });
+    const item = canvasItem("todo-1");
+    // 悬停展开后实际 120 高，比保存的 40 高
+    vi.spyOn(item, "getBoundingClientRect").mockReturnValue({ height: 120 } as DOMRect);
+    const handle = item.querySelector('[data-resize-handle="se"]') as HTMLElement;
+
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 300, clientY: 144 });
+    fireEvent.pointerMove(handle, { pointerId: 1, buttons: 1, clientX: 300, clientY: 104 });
+    // 往上缩时高度就是指针给的，不被展开的内容撑住
+    expect(item.style.height).toBe("80px");
+    expect(item.style.minHeight).toBe("");
+
+    fireEvent.pointerMove(handle, { pointerId: 1, buttons: 1, clientX: 300, clientY: 184 });
+    expect(item.style.height).toBe("160px");
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 300, clientY: 184 });
+
+    expect(onPlaceTodos).toHaveBeenLastCalledWith([{ todoId: "todo-1", x: 24, y: 24, width: 240, height: 160 }]);
+    expect(item.style.height).toBe("");
+  });
+
+  describe("悬停展开", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("离开卡片后等一会儿才收起，期间回来不收", () => {
+      vi.useFakeTimers();
+      renderCanvas(vi.fn(), [makeTodo("todo-1", "主句\n- [ ] 子项一")]);
+      const item = canvasItem("todo-1");
+      expect(expanded("todo-1")).toBe(false);
+
+      fireEvent.pointerEnter(item);
+      expect(expanded("todo-1")).toBe(true);
+
+      fireEvent.pointerLeave(item);
+      advance(CARD_COLLAPSE_DELAY - 1);
+      expect(expanded("todo-1")).toBe(true);
+      fireEvent.pointerEnter(item);
+      advance(CARD_COLLAPSE_DELAY * 2);
+      expect(expanded("todo-1")).toBe(true);
+
+      fireEvent.pointerLeave(item);
+      advance(CARD_COLLAPSE_DELAY);
+      expect(expanded("todo-1")).toBe(false);
+    });
+
+    it("伸出卡片的缩放手柄也算悬停，缩放中一直展开，松手在卡片外再收起", () => {
+      vi.useFakeTimers();
+      renderCanvas(vi.fn(), [makeTodo("todo-1", "主句\n- [ ] 子项一")]);
+      const handle = canvasItem("todo-1").querySelector('[data-resize-handle="se"]') as HTMLElement;
+
+      fireEvent.pointerEnter(handle);
+      expect(expanded("todo-1")).toBe(true);
+
+      fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+      fireEvent.pointerLeave(canvasItem("todo-1"));
+      fireEvent.pointerMove(handle, { pointerId: 1, buttons: 1, clientX: 300, clientY: 300 });
+      advance(CARD_COLLAPSE_DELAY * 2);
+      expect(expanded("todo-1")).toBe(true);
+
+      fireEvent.pointerUp(handle, { pointerId: 1, clientX: 300, clientY: 300 });
+      expect(expanded("todo-1")).toBe(true);
+      advance(CARD_COLLAPSE_DELAY);
+      expect(expanded("todo-1")).toBe(false);
+    });
+
+    it("进入另一张卡片时上一张立刻收起", () => {
+      vi.useFakeTimers();
+      renderCanvas(vi.fn(), [makeTodo("todo-1", "主句\n- [ ] 子项一"), makeTodo("todo-2", "另一张\n- [ ] 子项二")]);
+
+      fireEvent.pointerEnter(canvasItem("todo-1"));
+      fireEvent.pointerLeave(canvasItem("todo-1"));
+      fireEvent.pointerEnter(canvasItem("todo-2"));
+
+      expect(expanded("todo-1")).toBe(false);
+      expect(expanded("todo-2")).toBe(true);
+    });
+  });
 });
+
+function canvasItem(todoId: string) {
+  return document.querySelector(`[data-canvas-item="${todoId}"]`) as HTMLElement;
+}
+
+function expanded(todoId: string) {
+  const row = canvasItem(todoId).querySelector("[data-checklist-row]") as HTMLElement;
+  return !row.classList.contains("hidden");
+}
+
+function advance(ms: number) {
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+}
 
 function worldTransform() {
   return (document.querySelector("[data-board-canvas] > div > div") as HTMLElement).style.transform;
 }
 
-function renderCanvas(onPlaceTodos = vi.fn()) {
-  const todo = makeTodo();
-  const positions = new Map<string, CanvasPosition>([
-    ["todo-1", { todoId: "todo-1", x: 24, y: 24, width: null, height: null }],
-  ]);
+function renderCanvas(onPlaceTodos = vi.fn(), todos = [makeTodo()], size: Partial<CanvasPosition> = {}) {
+  const positions = new Map<string, CanvasPosition>(
+    todos.map((todo, index) => [
+      todo.id,
+      { todoId: todo.id, x: 24 + index * 300, y: 24, width: null, height: null, ...size },
+    ]),
+  );
   render(
     <BoardCanvas
-      todos={[todo]}
+      todos={todos}
       suspendedTodos={[]}
       positions={positions}
       positionsReady
@@ -109,10 +207,10 @@ function renderCanvas(onPlaceTodos = vi.fn()) {
   );
 }
 
-function makeTodo(): Todo {
+function makeTodo(id = "todo-1", detail = "第一条"): Todo {
   return {
-    id: "todo-1",
-    detail: "第一条",
+    id,
+    detail,
     status: "active",
     priority: "normal",
     suspendedAt: null,

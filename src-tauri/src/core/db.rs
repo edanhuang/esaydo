@@ -234,6 +234,10 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_bot_messages_session ON bot_messages(session_ref);
         "#,
     )?;
+    // Bot 进程脱离 EasyDo 运行：记下进程和它的输出文件，EasyDo 重启后据此接回或同步结果
+    ensure_column(conn, "bot_runs", "pid", "INTEGER")?;
+    ensure_column(conn, "bot_runs", "process_started", "TEXT")?;
+    ensure_column(conn, "bot_runs", "output_path", "TEXT")?;
     Ok(())
 }
 

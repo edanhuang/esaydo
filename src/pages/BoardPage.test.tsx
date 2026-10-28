@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { BotActivityContext, EMPTY_BOT_ACTIVITY } from "../components/bots/BotActivity";
 import { BoardPage } from "./BoardPage";
 import {
   archiveTodo,
@@ -173,6 +174,52 @@ describe("BoardPage", () => {
       todos = todos.map((todo) => (todo.id === id ? updated : todo));
       return updated;
     });
+  });
+
+  it("Bot 状态先于看板视图加载完时，不会不带视图去拉全部 Todo", async () => {
+    // 启动时 Bot 状态已经刷新过一次（version > 0），看板视图还在加载
+    render(
+      <BotActivityContext.Provider value={{ ...EMPTY_BOT_ACTIVITY, version: 1 }}>
+        <BoardPage onNavigate={vi.fn()} />
+      </BotActivityContext.Provider>,
+    );
+
+    await waitFor(() => expect(listTodos).toHaveBeenCalled());
+    expect(listTodos).not.toHaveBeenCalledWith(undefined);
+  });
+
+  it("启动时 Bot 状态在 Todo 还没拉回来时刷新，不会拉错视图的 Todo", async () => {
+    vi.mocked(getSelectedBoardViewId).mockResolvedValue("work-view");
+    let releaseWork: () => void = () => undefined;
+    const workReady = new Promise<void>((resolve) => {
+      releaseWork = resolve;
+    });
+    const loadTodos = vi.mocked(listTodos).getMockImplementation()!;
+    vi.mocked(listTodos).mockImplementation(async (boardViewId) => {
+      // 「工作」视图的 Todo 晚一点回来，模拟启动时的网络 / 数据库延迟
+      if (boardViewId === "work-view") {
+        await workReady;
+      }
+      return loadTodos(boardViewId);
+    });
+
+    const { rerender } = render(
+      <BotActivityContext.Provider value={{ ...EMPTY_BOT_ACTIVITY, version: 0 }}>
+        <BoardPage onNavigate={vi.fn()} />
+      </BotActivityContext.Provider>,
+    );
+    await waitFor(() => expect(listTodos).toHaveBeenCalledWith("work-view"));
+    // 这时 Bot 状态刷新了一次
+    rerender(
+      <BotActivityContext.Provider value={{ ...EMPTY_BOT_ACTIVITY, version: 1 }}>
+        <BoardPage onNavigate={vi.fn()} />
+      </BotActivityContext.Provider>,
+    );
+    releaseWork();
+
+    await waitFor(() => expect(within(getViewSwitcher()).getByText("工作")).toBeInTheDocument());
+    expect(listTodos).not.toHaveBeenCalledWith("all");
+    expect(listTodos).not.toHaveBeenCalledWith(undefined);
   });
 
   it("creates a detail-only todo with Enter and ignores empty input", async () => {
@@ -721,9 +768,10 @@ describe("BoardPage", () => {
     fireEvent.pointerMove(topLeft, { pointerId: 3, clientX: 136, clientY: 64 });
     fireEvent.pointerUp(topLeft, { pointerId: 3, clientX: 136, clientY: 64 });
 
+    // jsdom 没有布局，量不到卡片实际高度，起点按最小高度 32 算，再往上拉 40
     await waitFor(() =>
       expect(saveCanvasPositions).toHaveBeenLastCalledWith("all", [
-        { todoId: "todo-1", x: 136, y: 64, width: 380, height: 40 },
+        { todoId: "todo-1", x: 136, y: 64, width: 380, height: 72 },
       ]),
     );
   });
@@ -793,7 +841,7 @@ describe("BoardPage", () => {
     const rows = () => document.querySelectorAll('[data-canvas-item="todo-1"] [data-checklist-row]');
     expect(rows()).toHaveLength(2);
     for (const row of rows()) {
-      expect(row).toHaveClass("hidden", "group-hover:flex");
+      expect(row).toHaveClass("hidden");
     }
 
     fireEvent.click(getTodoCardByText("主句"));
@@ -841,7 +889,7 @@ describe("BoardPage", () => {
     const [first, second] = document.querySelectorAll('[data-canvas-item="todo-1"] [data-checklist-row]');
     expect(first).toHaveClass("flex");
     expect(first).not.toHaveClass("hidden");
-    expect(second).toHaveClass("hidden", "group-hover:flex");
+    expect(second).toHaveClass("hidden");
   });
 
   it("lets a single-group view fill the width in list mode", async () => {

@@ -1,9 +1,17 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type React from "react";
-import { ArrowUp, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, PenLine, SquareTerminal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FIELD_SEND_BUTTON_CLASS, FIELD_TEXTAREA_CLASS, FieldBox } from "@/components/ui/field-box";
 import { Textarea } from "@/components/ui/textarea";
-import { dispatchTodoToBot, listBotConversations, listBotMessages, markBotMessagesRead } from "@/lib/api";
+import {
+  dispatchTodoToBot,
+  listBotConversations,
+  listBotMessages,
+  markBotMessagesRead,
+  openBotSessionInTerminal,
+} from "@/lib/api";
+import { readBotDraft, writeBotDraft } from "@/lib/botDrafts";
 import { cn } from "@/lib/utils";
 import type { Bot, BotConversation, BotMessage } from "@/types";
 import { useBotActivity, type MessagesTarget } from "./BotActivity";
@@ -31,6 +39,8 @@ export function MessagesDrawer({
   // 右栏切换方向：进入对话从右往左滑入，返回列表从左往右滑入
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [conversations, setConversations] = useState<BotConversation[]>([]);
+  // 全屏只在对话这一级有：铺满整个窗口，不再像弹出层
+  const [fullscreen, setFullscreen] = useState(false);
   // 关闭时先播完滑出动画再卸载
   const [mounted, setMounted] = useState(open);
   const [closing, setClosing] = useState(false);
@@ -40,6 +50,7 @@ export function MessagesDrawer({
       setMounted(true);
       setClosing(false);
       setDirection("forward");
+      setFullscreen(false);
       setLevel(target ? { kind: "chat", ...target } : { kind: "bots" });
       return;
     }
@@ -71,12 +82,17 @@ export function MessagesDrawer({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        // 和 macOS 全屏一样，Esc 先退出全屏，再按一次才关闭
+        if (fullscreen) {
+          setFullscreen(false);
+        } else {
+          onClose();
+        }
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, fullscreen]);
 
   if (!mounted) {
     return null;
@@ -89,27 +105,48 @@ export function MessagesDrawer({
   function go(next: Level, nextDirection: "forward" | "back") {
     setDirection(nextDirection);
     setLevel(next);
+    // 列表那一级没有全屏按钮，回到列表就恢复抽屉宽度
+    if (next.kind !== "chat") {
+      setFullscreen(false);
+    }
   }
 
   return (
     <div className="fixed inset-0 z-50" data-messages-drawer>
       <div
         className={cn(
-          "absolute inset-0 bg-black/10",
+          "absolute inset-0 bg-black/10 transition-opacity duration-300",
           closing ? "drawer-scrim-exit" : "drawer-scrim-enter",
+          fullscreen && "opacity-0",
         )}
         onClick={onClose}
       />
       <aside
+        data-fullscreen={fullscreen ? "true" : undefined}
         className={cn(
-          "absolute inset-y-0 right-0 flex max-w-[calc(100vw-48px)] flex-col overflow-hidden border-l border-easydo-border bg-easydo-bg text-easydo-cream shadow-easydo-card",
+          "absolute inset-y-0 right-0 flex flex-col overflow-hidden bg-easydo-bg text-easydo-cream",
           "transition-[width] duration-300 ease-out",
+          fullscreen ? "max-w-[100vw]" : "max-w-[calc(100vw-48px)] border-l border-easydo-border shadow-easydo-card",
           closing ? "drawer-exit" : "drawer-enter",
         )}
-        style={{ width: DRAWER_WIDTH[level.kind] }}
+        style={{ width: fullscreen ? "100vw" : DRAWER_WIDTH[level.kind] }}
       >
-        <header className="flex h-11 shrink-0 items-center gap-2 border-b border-easydo-borderSoft bg-easydo-surfaceWarm pl-4 pr-2">
-          <p className="min-w-0 flex-1 truncate text-sm font-semibold">消息</p>
+        <header
+          // 全屏时这一条就是窗口顶栏：给左上角红绿灯让位，也能拖动窗口
+          data-tauri-drag-region={fullscreen ? true : undefined}
+          className={cn(
+            "flex h-11 shrink-0 items-center gap-2 border-b border-easydo-borderSoft bg-easydo-surfaceWarm pr-2 transition-[padding] duration-300",
+            fullscreen ? "pl-[calc(var(--traffic-light-inset)+14px)]" : "pl-4",
+          )}
+        >
+          <p data-tauri-drag-region={fullscreen ? true : undefined} className="min-w-0 flex-1 truncate text-sm font-semibold">
+            消息
+          </p>
+          {level.kind === "chat" ? (
+            <IconButton title={fullscreen ? "退出全屏" : "全屏"} onClick={() => setFullscreen((current) => !current)}>
+              {fullscreen ? <Minimize2 data-icon="inline-start" /> : <Maximize2 data-icon="inline-start" />}
+            </IconButton>
+          ) : null}
           <IconButton title="关闭" onClick={onClose}>
             <X data-icon="inline-start" />
           </IconButton>
@@ -162,6 +199,7 @@ export function MessagesDrawer({
                   />
                 ) : (
                   <Chat
+                    botId={level.botId}
                     bot={botsById.get(level.botId) ?? null}
                     conversation={
                       conversations.find((item) => item.botId === level.botId && item.todoId === level.todoId) ??
@@ -240,11 +278,13 @@ function PaneHeader({
   title,
   subtitle,
   leading,
+  trailing,
   onBack,
 }: {
   title: string;
   subtitle?: string | null;
   leading?: React.ReactNode;
+  trailing?: React.ReactNode;
   onBack?: () => void;
 }) {
   return (
@@ -261,6 +301,7 @@ function PaneHeader({
         <p className="truncate text-sm font-semibold">{title}</p>
         {subtitle ? <p className="truncate text-[11px] text-easydo-textMuted">{subtitle}</p> : null}
       </div>
+      {trailing}
     </div>
   );
 }
@@ -291,9 +332,7 @@ function TodoList({
           >
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm">{headlineOf(item.todoDetail)}</p>
-              <p className="truncate text-xs text-easydo-textMuted">
-                {item.running ? "运行中…" : (item.lastMessagePreview ?? "")}
-              </p>
+              <ConversationPreview item={item} />
             </div>
             {item.unreadCount > 0 ? (
               <UnreadBadge count={item.unreadCount} onClick={() => onOpen(item.todoId)} />
@@ -305,31 +344,51 @@ function TodoList({
   );
 }
 
+/** 列表里每段对话的第二行：运行中 > 没发出去的草稿 > 最后一条消息 */
+function ConversationPreview({ item }: { item: BotConversation }) {
+  const draft = item.running ? "" : readBotDraft(item.botId, item.todoId).trim();
+  return (
+    <p className="truncate text-xs text-easydo-textMuted">
+      {item.running ? (
+        "运行中…"
+      ) : draft ? (
+        <>
+          <span className="mr-1 text-easydo-gold">草稿</span>
+          {draft.replace(/\s+/g, " ")}
+        </>
+      ) : (
+        (item.lastMessagePreview ?? "")
+      )}
+    </p>
+  );
+}
+
 function Chat({
+  botId,
   bot,
   conversation,
   todoId,
   onBack,
 }: {
+  botId: string;
   bot: Bot | null;
   conversation: BotConversation | null;
   todoId: string;
   onBack: () => void;
 }) {
-  const { version, runningBotFor } = useBotActivity();
+  const { version, runningBotFor, runStartedAt } = useBotActivity();
   const [messages, setMessages] = useState<BotMessage[]>([]);
-  const [input, setInput] = useState("");
+  // 输入一半离开（切对话、返回、关抽屉、退出 App）都保留，回来接着写
+  const [input, setInput] = useState(() => readBotDraft(botId, todoId));
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const handleListScroll = useKeepScrollPosition(listRef, contentRef);
   const isComposingRef = useRef(false);
-  const botId = bot?.id ?? null;
-  const running = runningBotFor(todoId)?.id === botId && botId !== null;
+  const running = runningBotFor(todoId)?.id === botId;
 
   useEffect(() => {
-    if (!botId) {
-      return;
-    }
     listBotMessages(todoId, botId)
       .then((next) => {
         setMessages(next);
@@ -341,16 +400,23 @@ function Chat({
       .catch(() => setMessages([]));
   }, [todoId, botId, version]);
 
+  // 只在第一次打开、有新消息或开始运行时滚到底；数据刷新（例如窗口重新获得焦点）不打断正在往上翻的人
+  const seenCountRef = useRef(0);
+  const wasRunningRef = useRef(running);
   useLayoutEffect(() => {
     const list = listRef.current;
-    if (list) {
+    const grew = messages.length > seenCountRef.current;
+    const started = running && !wasRunningRef.current;
+    seenCountRef.current = messages.length;
+    wasRunningRef.current = running;
+    if (list && (grew || started)) {
       list.scrollTop = list.scrollHeight;
     }
   }, [messages, running]);
 
   async function send() {
     const text = input.trim();
-    if (!botId || !text || sending || running) {
+    if (!text || sending || running) {
       return;
     }
     setSending(true);
@@ -358,6 +424,7 @@ function Chat({
     try {
       await dispatchTodoToBot(todoId, botId, text);
       setInput("");
+      writeBotDraft(botId, todoId, "");
     } catch (nextError) {
       setError(String(nextError));
     } finally {
@@ -365,43 +432,64 @@ function Chat({
     }
   }
 
-  const subtitle = useMemo(() => {
-    if (!conversation) {
-      return null;
-    }
-    const parts = [conversation.title, conversation.sessionId ? `会话 ${conversation.sessionId.slice(0, 8)}` : null];
-    return parts.filter(Boolean).join(" · ");
-  }, [conversation]);
-
   return (
     <>
       <PaneHeader
         title={conversation ? headlineOf(conversation.todoDetail) : "对话"}
-        subtitle={subtitle}
         onBack={onBack}
         leading={bot ? <BotAvatar color={bot.color} running={running} /> : null}
+        trailing={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            // 同一段会话不要两边同时写：Bot 运行中先不让在终端打开
+            disabled={!conversation?.sessionId || running}
+            title={
+              !conversation?.sessionId
+                ? "还没有会话，Bot 跑起来后可以在终端打开"
+                : running
+                  ? "Bot 运行中，结束后再在终端打开"
+                  : "在终端打开这段会话"
+            }
+            className="rounded-lg text-easydo-textMuted hover:bg-easydo-surfaceHover hover:text-easydo-cream"
+            onClick={() => {
+              openBotSessionInTerminal(todoId, botId).catch((nextError) => setError(String(nextError)));
+            }}
+          >
+            <SquareTerminal data-icon="inline-start" />
+            <span className="sr-only">在终端打开</span>
+          </Button>
+        }
       />
-      <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
-        ))}
-        {running ? <p className="text-center text-xs text-easydo-textMuted">{bot?.name} 正在处理…</p> : null}
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4" onScroll={handleListScroll}>
+        {/* 全屏时窗口很宽，对话限宽居中，一行不会长得没法读 */}
+        <div ref={contentRef} className="mx-auto w-full max-w-[760px] space-y-4">
+          {conversation ? <ConversationContext conversation={conversation} /> : null}
+          {messages.map((message) => (
+            <MessageBubble key={message.id} message={message} />
+          ))}
+          {running ? <BotWriting name={bot?.name ?? "Bot"} startedAt={runStartedAt(todoId)} /> : null}
+        </div>
       </div>
-      <div className="shrink-0 border-t border-easydo-borderSoft p-3">
+      <div className="mx-auto w-full max-w-[784px] shrink-0 border-t border-easydo-borderSoft p-3">
         {error ? (
           <p role="alert" className="mb-2 text-xs text-destructive">
             {error}
           </p>
         ) : null}
-        <div className="flex items-end gap-2 rounded-xl border border-easydo-border bg-easydo-surface p-1.5">
+        <FieldBox className="flex items-end gap-2 p-1.5">
           <Textarea
             aria-label="回复 Bot"
             rows={1}
             value={input}
             disabled={running}
             placeholder={running ? "Bot 运行中，结束后可以继续回复" : "继续对话，回车发送"}
-            className="max-h-32 min-h-8 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-sm text-easydo-cream shadow-none placeholder:font-light placeholder:text-[hsl(var(--easydo-text-muted)/0.55)] focus-visible:ring-0 dark:bg-transparent md:text-sm"
-            onChange={(event) => setInput(event.target.value)}
+            className={cn(FIELD_TEXTAREA_CLASS, "max-h-32 min-w-0 flex-1 px-2")}
+            onChange={(event) => {
+              setInput(event.target.value);
+              writeBotDraft(botId, todoId, event.target.value);
+            }}
             onCompositionStart={() => {
               isComposingRef.current = true;
             }}
@@ -419,14 +507,189 @@ function Chat({
             type="button"
             title="发送"
             disabled={running || sending || !input.trim()}
-            className="mb-1 mr-1 grid size-6 shrink-0 place-items-center rounded-full bg-easydo-gold text-easydo-onAccent transition-opacity disabled:opacity-40"
+            className={FIELD_SEND_BUTTON_CLASS}
             onClick={() => void send()}
           >
             <ArrowUp className="size-3" />
           </button>
-        </div>
+        </FieldBox>
       </div>
     </>
+  );
+}
+
+// 离底部这么近就算「在最底下」
+const STICK_TO_BOTTOM_THRESHOLD = 4;
+
+/**
+ * 对话区宽度或内容高度变了（全屏、退出全屏、拖窗口），滚动位置跟着修正：
+ * 原来在最底下就继续贴底；停在中间就让屏幕最上面那条消息留在原处。
+ * 修正放在 ResizeObserver 回调里，浏览器排好版、画到屏幕之前就改好，不会先闪一帧旧位置
+ */
+function useKeepScrollPosition(
+  listRef: React.RefObject<HTMLDivElement | null>,
+  contentRef: React.RefObject<HTMLDivElement | null>,
+) {
+  const stickRef = useRef(true);
+  const anchorRef = useRef<{ element: Element; offset: number } | null>(null);
+
+  function remember() {
+    const list = listRef.current;
+    const content = contentRef.current;
+    if (!list || !content) {
+      return;
+    }
+    stickRef.current = list.scrollHeight - list.scrollTop - list.clientHeight <= STICK_TO_BOTTOM_THRESHOLD;
+    const top = list.getBoundingClientRect().top;
+    const element = Array.from(content.children).find((child) => child.getBoundingClientRect().bottom > top);
+    anchorRef.current = element ? { element, offset: element.getBoundingClientRect().top - top } : null;
+  }
+
+  useEffect(() => {
+    const list = listRef.current;
+    const content = contentRef.current;
+    if (!list || !content || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (stickRef.current) {
+        // 直接设值，不用平滑滚动：动画中每帧都在变，平滑滚动会一直追不上
+        list.scrollTop = list.scrollHeight;
+      } else {
+        const anchor = anchorRef.current;
+        if (anchor?.element.isConnected) {
+          const offset = anchor.element.getBoundingClientRect().top - list.getBoundingClientRect().top;
+          list.scrollTop += offset - anchor.offset;
+        }
+      }
+      remember();
+    });
+    observer.observe(list);
+    observer.observe(content);
+    return () => observer.disconnect();
+    // 两个 ref 指向的节点在对话窗存在期间不变
+  }, []);
+
+  return remember;
+}
+
+/** Bot 运行中占在回复的位置：一支笔来回写，下面一行字说明在干什么、跑了多久 */
+function BotWriting({ name, startedAt }: { name: string; startedAt: string | null }) {
+  const elapsed = useElapsed(startedAt);
+  return (
+    <div data-bot-writing className="flex flex-col items-start gap-1">
+      <div className="flex items-center gap-3 rounded-xl border border-easydo-borderSoft bg-easydo-surface px-3.5 py-2.5">
+        <span className="bot-writing relative block h-5 w-11 shrink-0" aria-hidden>
+          <span className="bot-writing-line absolute bottom-0.5 left-0 h-px w-full origin-left bg-easydo-textMuted" />
+          <PenLine className="bot-writing-pen absolute bottom-1 left-0 size-4 text-easydo-cream" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm text-easydo-cream">{name} 正在处理…</p>
+          <p className="text-xs text-easydo-textMuted">处理完会通知你，可以先去忙别的</p>
+        </div>
+      </div>
+      {elapsed ? <span className="text-[11px] tabular-nums text-easydo-textMuted">已用时 {elapsed}</span> : null}
+    </div>
+  );
+}
+
+/** 从开始时间到现在过了多久，每秒刷新：「42 秒」「3 分 05 秒」「1 小时 02 分」 */
+function useElapsed(startedAt: string | null) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!startedAt) {
+      return;
+    }
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAt]);
+  if (!startedAt) {
+    return null;
+  }
+  const seconds = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
+  if (!Number.isFinite(seconds)) {
+    return null;
+  }
+  if (seconds < 60) {
+    return `${seconds} 秒`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} 分 ${String(seconds % 60).padStart(2, "0")} 秒`;
+  }
+  return `${Math.floor(minutes / 60)} 小时 ${String(minutes % 60).padStart(2, "0")} 分`;
+}
+
+/** 会话名在 Claude / Codex 里带「EasyDo · 」前缀方便那边认出来，在 EasyDo 里就不用重复了 */
+function displaySessionTitle(title: string | null) {
+  return title?.replace(/^EasyDo\s*·\s*/, "").trim() || null;
+}
+
+/** 对话最上方的前提：这段对话处理的是哪条 Todo（可展开全文），以及会话名和会话 ID */
+function ConversationContext({ conversation }: { conversation: BotConversation }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const headline = headlineOf(conversation.todoDetail);
+  const hasMore = conversation.todoDetail.trim() !== headline;
+  const title = displaySessionTitle(conversation.title);
+  const sessionId = conversation.sessionId;
+
+  async function copySessionId() {
+    if (!sessionId) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // 剪贴板不可用时不提示
+    }
+  }
+
+  return (
+    <div
+      data-conversation-context
+      className="mx-auto w-full max-w-[85%] rounded-xl border border-easydo-borderSoft bg-easydo-surfaceWarm px-3.5 py-2.5"
+    >
+      <button
+        type="button"
+        aria-expanded={hasMore ? expanded : undefined}
+        disabled={!hasMore}
+        title={hasMore ? (expanded ? "收起 Todo" : "展开完整 Todo") : undefined}
+        className="flex w-full items-center justify-center gap-1 text-center text-sm font-medium text-easydo-cream disabled:cursor-default"
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span className="min-w-0 truncate">{headline}</span>
+        {hasMore ? (
+          <ChevronDown
+            className={cn("size-3.5 shrink-0 text-easydo-textMuted transition-transform duration-200", expanded && "rotate-180")}
+          />
+        ) : null}
+      </button>
+      {expanded ? (
+        <div className="mt-2 select-text border-t border-easydo-borderSoft pt-2 text-sm text-easydo-textSecondary">
+          <MessageMarkdown content={conversation.todoDetail} />
+        </div>
+      ) : null}
+      {title || sessionId ? (
+        <div className="mt-1.5 flex items-center gap-3 text-[11px] text-easydo-textMuted">
+          <span className="min-w-0 flex-1 truncate" title={title ?? undefined}>
+            {title}
+          </span>
+          {sessionId ? (
+            <button
+              type="button"
+              title={`${sessionId}\n点击复制完整会话 ID`}
+              className="shrink-0 tabular-nums transition-colors hover:text-easydo-cream"
+              onClick={() => void copySessionId()}
+            >
+              {copied ? "已复制" : `会话 ${sessionId.slice(0, 8)}`}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
