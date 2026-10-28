@@ -1,5 +1,9 @@
+pub mod bot_agent;
+pub mod bot_service;
+pub mod canvas_service;
 pub mod cli_install;
 pub mod db;
+pub mod diagnostics;
 pub mod error;
 pub mod models;
 pub mod selectors;

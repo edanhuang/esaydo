@@ -61,8 +61,8 @@ export function BoardViewSwitcher({
       tabIndex={0}
       aria-label="切换 Board View"
       className={cn(
-        "no-scrollbar flex min-h-8 w-fit max-w-full items-center overflow-x-auto px-0.5 transition-[width,background-color] duration-200",
-        isExpanded && "bg-easydo-bgSoft/70",
+        "no-scrollbar flex min-h-8 w-fit max-w-full items-center overflow-x-auto rounded-lg p-0.5 transition-[background-color] duration-200",
+        isExpanded && "bg-easydo-bgSoft",
       )}
       onPointerEnter={() => setExpanded(true)}
       onPointerLeave={() => {
@@ -98,7 +98,7 @@ export function BoardViewSwitcher({
             <span
               data-view-active-indicator
               aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0.5 bg-easydo-surfaceActive shadow-easydo-card transition-[transform,width] duration-150 ease-out"
+              className="pointer-events-none absolute inset-y-0 rounded-md bg-easydo-surface shadow-easydo-lavender transition-transform duration-150 ease-out"
               style={{
                 width: activeRect.width,
                 transform: `translateX(${activeRect.left}px)`,
@@ -116,7 +116,7 @@ export function BoardViewSwitcher({
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  "relative z-10 h-7 shrink-0 rounded-none px-2.5 text-sm transition-[opacity,color,background-color] duration-150",
+                  "relative z-10 h-7 shrink-0 rounded-md px-2.5 text-sm transition-[opacity,color,background-color] duration-150",
                   selected
                     ? "text-easydo-cream opacity-100"
                     : "text-easydo-textSecondary opacity-45 hover:bg-easydo-surfaceHover hover:text-easydo-cream hover:opacity-80",
@@ -138,7 +138,7 @@ export function BoardViewSwitcher({
           key={`${currentView.id}-${transitionKey}`}
           data-view-direction={transitionDirection}
           className={cn(
-            "px-2.5 text-lg font-semibold text-easydo-cream",
+            "px-2 text-sm font-semibold text-easydo-cream",
             transitionDirection === "right"
               ? "animate-in fade-in slide-in-from-right-2 duration-200"
               : "animate-in fade-in slide-in-from-left-2 duration-200",

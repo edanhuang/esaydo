@@ -9,9 +9,9 @@ export const themeModeOptions: Array<{
   value: ThemeMode;
   label: string;
 }> = [
-  { value: "system", label: "System" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
+  { value: "system", label: "跟随系统" },
+  { value: "light", label: "浅色" },
+  { value: "dark", label: "深色" },
 ];
 
 export function resolveThemeMode(

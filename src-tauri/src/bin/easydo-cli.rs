@@ -11,6 +11,7 @@ use easydo_lib::core::error::{EasyDoError, ErrorKind, Result};
 use easydo_lib::core::models::TodoWithRelations;
 use easydo_lib::core::selectors::{resolve_group, resolve_todo_id, resolve_view};
 use easydo_lib::core::skills::{install_skills, AgentTarget, SkillCatalog, SkillInstallResult};
+use easydo_lib::core::workspace_service;
 use easydo_lib::core::todo_service::{
     self, CreateTodoInput, TimeField, TimeRange, TodoFilter, TodoPriority, TodoStatus,
 };
@@ -45,6 +46,8 @@ enum Commands {
     },
     /// 将收件箱 Todo 迁移到普通 Group
     Move(MoveArgs),
+    /// 列出全部 Group（包括还没有 Todo 的）
+    Groups(GroupsArgs),
     /// 修改 Todo 内容
     Update(UpdateArgs),
     /// 标记 Todo 属性
@@ -58,6 +61,15 @@ enum Commands {
         #[command(subcommand)]
         command: SkillCommands,
     },
+}
+
+#[derive(Debug, Args)]
+#[command(
+    after_help = "示例:\n  easydo groups\n  easydo groups --json\n\n文本输出只列普通 Group；JSON 输出包含收件箱等系统 Group，用 systemKey 区分。"
+)]
+struct GroupsArgs {
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -251,6 +263,17 @@ fn run(cli: Cli) -> Result<()> {
                         print_todo(&todo, args.json)
                     }
                 },
+                Commands::Groups(args) => {
+                    let groups = workspace_service::list_groups(&conn)?;
+                    if args.json {
+                        println!("{}", serde_json::to_string_pretty(&groups)?);
+                    } else {
+                        for group in groups.iter().filter(|group| group.system_key.is_none()) {
+                            println!("{}", group.name);
+                        }
+                    }
+                    Ok(())
+                }
                 Commands::Move(args) => {
                     let id = resolve_todo_id(&conn, &args.selector)?;
                     let group = resolve_group(&conn, &args.group)?;

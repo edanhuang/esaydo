@@ -2,8 +2,8 @@
   "skills": [
     {
       "name": "easydo",
-      "version": "0.3.0",
-      "description": "通过 EasyDo CLI 管理 Todo；仅在用户显式允许 subagents 时并行编排，否则由单 Agent 保守同步实际工作结果。",
+      "version": "0.5.1",
+      "description": "通过 EasyDo CLI 管理 Todo 并规定 Todo 内容写法；工作结果同步由后台 hook 自动完成。",
       "path": "easydo"
     }
   ]

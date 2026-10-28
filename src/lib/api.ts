@@ -1,5 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type {
+  ActiveBotRun,
+  Bot,
+  BotConversation,
+  BotInput,
+  BotMessage,
+  DispatchPreview,
+  TodoUnread,
+  BoardLayoutMode,
+  CanvasPosition,
   AppearanceSettings,
   BoardView,
   CliInstallStatus,
@@ -157,4 +167,85 @@ export function installSkillToTarget(
 
 export function chooseSkillInstallDirectory(): Promise<string | null> {
   return invoke("choose_skill_install_directory");
+}
+
+export function listCanvasPositions(boardViewId: string): Promise<CanvasPosition[]> {
+  return invoke("list_canvas_positions", { boardViewId });
+}
+
+export function appendCanvasLog(lines: string[]): Promise<void> {
+  return invoke("append_canvas_log", { lines });
+}
+
+export function saveCanvasPositions(boardViewId: string, positions: CanvasPosition[]): Promise<void> {
+  return invoke("save_canvas_positions", { boardViewId, positions });
+}
+
+export async function getBoardLayoutMode(boardViewId: string): Promise<BoardLayoutMode> {
+  return (await invoke<string>("get_board_layout_mode", { boardViewId })) === "canvas" ? "canvas" : "list";
+}
+
+export function saveBoardLayoutMode(boardViewId: string, mode: BoardLayoutMode): Promise<string> {
+  return invoke("save_board_layout_mode", { boardViewId, mode });
+}
+
+export function listBots(): Promise<Bot[]> {
+  return invoke("list_bots");
+}
+
+export function createBot(input: BotInput): Promise<Bot> {
+  return invoke("create_bot", { input });
+}
+
+export function updateBot(id: string, input: BotInput): Promise<Bot> {
+  return invoke("update_bot", { id, input });
+}
+
+export function countBotMessages(id: string): Promise<number> {
+  return invoke("count_bot_messages", { id });
+}
+
+export function deleteBot(id: string): Promise<void> {
+  return invoke("delete_bot", { id });
+}
+
+export function chooseBotDirectory(): Promise<string | null> {
+  return invoke("choose_bot_directory");
+}
+
+export function getBotDispatchPreview(todoId: string, botId: string): Promise<DispatchPreview> {
+  return invoke("get_bot_dispatch_preview", { todoId, botId });
+}
+
+export function dispatchTodoToBot(todoId: string, botId: string, instruction: string): Promise<void> {
+  return invoke("dispatch_todo_to_bot", { todoId, botId, instruction });
+}
+
+export function stopBotRun(todoId: string, botId: string): Promise<void> {
+  return invoke("stop_bot_run", { todoId, botId });
+}
+
+export function listActiveBotRuns(): Promise<ActiveBotRun[]> {
+  return invoke("list_active_bot_runs");
+}
+
+export function listBotUnread(): Promise<TodoUnread[]> {
+  return invoke("list_bot_unread");
+}
+
+export function listBotConversations(): Promise<BotConversation[]> {
+  return invoke("list_bot_conversations");
+}
+
+export function listBotMessages(todoId: string, botId: string): Promise<BotMessage[]> {
+  return invoke("list_bot_messages", { todoId, botId });
+}
+
+export function markBotMessagesRead(todoId: string, botId: string): Promise<void> {
+  return invoke("mark_bot_messages_read", { todoId, botId });
+}
+
+/** Bot 开始、结束运行或消息已读时触发；返回取消监听的函数 */
+export function onBotRunsChanged(handler: () => void): Promise<() => void> {
+  return listen("bot-runs-changed", handler);
 }

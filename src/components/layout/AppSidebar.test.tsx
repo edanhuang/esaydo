@@ -9,24 +9,26 @@ const groups: Group[] = [
 ];
 
 describe("AppSidebar board groups", () => {
-  it("keeps the header compact and renders shortcut keycaps without brand copy", () => {
+  it("names destinations in Chinese and keeps shortcut keycaps behind the keyboard button", () => {
     renderSidebar(makeBoardView("work-view", "工作", [groups[0]]));
 
-    expect(screen.queryByText("EasyDo")).not.toBeInTheDocument();
-    expect(screen.queryByText("One snap, tasks are handled.")).not.toBeInTheDocument();
-    expect(screen.queryByText("Keyboard flow")).not.toBeInTheDocument();
-    expect(screen.getByText("上一条")).toBeInTheDocument();
-    expect(screen.getByText("完成 / 恢复")).toBeInTheDocument();
-    expect(document.querySelectorAll('[data-slot="kbd"]')).toHaveLength(7);
+    expect(screen.getByRole("button", { name: "看板" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "每日" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByText("分组")).toBeInTheDocument();
+    expect(screen.getByText("EasyDo")).toBeInTheDocument();
+    expect(screen.queryByText("上一条")).not.toBeInTheDocument();
     expect(document.querySelector("[data-sidebar-scroll]")).toHaveClass(
       "flex-1",
       "overflow-y-auto",
     );
-    expect(document.querySelector("[data-sidebar-shortcuts]")).toHaveClass(
-      "shrink-0",
-      "rounded-lg",
-      "bg-muted/60",
-    );
+
+    fireEvent.click(screen.getByTitle("快捷键"));
+
+    expect(screen.getByText("上一条")).toBeInTheDocument();
+    expect(screen.getByText("完成 / 恢复")).toBeInTheDocument();
+    expect(screen.getByText("画布 / 列表")).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-slot="kbd"]')).toHaveLength(9);
+    expect(document.querySelector("[data-sidebar-shortcuts]")).toHaveClass("shrink-0", "rounded-xl");
   });
 
   it("highlights groups included in the current view and exposes plus or minus actions", () => {

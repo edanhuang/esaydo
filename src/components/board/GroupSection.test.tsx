@@ -57,12 +57,13 @@ describe("GroupSection", () => {
     expect(onReorderTodo).not.toHaveBeenCalled();
 
     const todoList = document.querySelector("[data-todo-list]");
-    expect(todoList).toHaveClass("divide-y", "divide-border");
+    expect(todoList).toHaveClass("overflow-y-auto");
     expect(document.querySelector("[data-group-section]")).toHaveClass(
       "h-fit",
       "max-h-full",
       "self-start",
-      "rounded-md",
+      "rounded-xl",
+      "min-w-[360px]",
     );
     for (const todoCard of document.querySelectorAll("[data-todo-card]")) {
       expect(todoCard).not.toHaveClass("rounded-sm", "border", "shadow-easydo-card");

@@ -38,6 +38,32 @@ export function formatDateHeading(dateLike: string): string {
   return `${month}-${day}`;
 }
 
+const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+/** Daily 页的日期标题，如 10月27日 */
+export function formatDayHeading(dateLike: string): string {
+  const date = parseDateKey(dateLike);
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+export function formatWeekday(dateLike: string): string {
+  return WEEKDAY_LABELS[parseDateKey(dateLike).getDay()];
+}
+
+/** 周范围，如 10月26日 至 11月1日：数字和中文紧排，「至」两侧留空格把两个日期分开 */
+export function formatWeekRangeLabel(range: WeekRange): string {
+  return `${formatDayHeading(toDateKey(range.start))} 至 ${formatDayHeading(toDateKey(range.end))}`;
+}
+
+export function todayDateKey(now = new Date()): string {
+  return toDateKey(now);
+}
+
+function parseDateKey(dateLike: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateLike);
+  return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date(dateLike);
+}
+
 export function groupTodosByDailyDate(todos: Todo[], range: WeekRange): Array<[string, Todo[]]> {
   const groups = new Map<string, Todo[]>();
   for (let index = 0; index < 7; index += 1) {

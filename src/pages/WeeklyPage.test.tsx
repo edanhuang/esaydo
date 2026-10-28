@@ -172,5 +172,5 @@ function dateInRange(start: Date, offsetDays: number): string {
 
 function formatShortDate(dateLike: string): string {
   const date = new Date(dateLike);
-  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
 }

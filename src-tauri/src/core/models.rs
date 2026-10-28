@@ -115,6 +115,19 @@ pub struct AppearanceSettings {
     pub mode: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasPosition {
+    pub todo_id: String,
+    pub x: f64,
+    pub y: f64,
+    /// 用户拉伸后的宽高；为空时用默认宽度和内容高度
+    #[serde(default)]
+    pub width: Option<f64>,
+    #[serde(default)]
+    pub height: Option<f64>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct LayoutSettings {
