@@ -8,6 +8,7 @@ import {
   placeUnpositionedTodos,
   snapToCanvasGrid,
   sortByCanvasPosition,
+  todosInsideCanvasRect,
   visibleChecklistRowCount,
 } from "./canvasLayout";
 
@@ -82,6 +83,20 @@ describe("canvas layout", () => {
     expect(snapToCanvasGrid(13.9)).toBe(12);
     expect(snapToCanvasGrid(-5)).toBe(-4);
     expect(snapToCanvasGrid(-1)).toBe(0);
+  });
+
+  it("selects only cards that lie fully inside the marquee", () => {
+    const todos = [makeTodo("inside", "一"), makeTodo("partial", "二"), makeTodo("tall", "三")];
+    const positions = new Map<string, CanvasPosition>([
+      ["inside", { todoId: "inside", x: 24, y: 24 }],
+      ["partial", { todoId: "partial", x: 200, y: 24 }],
+      ["tall", { todoId: "tall", x: 24, y: 100 }],
+    ]);
+    const rect = { minX: 0, minY: 0, maxX: 300, maxY: 200 };
+
+    expect(todosInsideCanvasRect(todos, positions, rect)).toEqual(["inside", "tall"]);
+    // 量到的实际高度伸出了框，就不算在框里
+    expect(todosInsideCanvasRect(todos, positions, rect, new Map([["tall", 120]]))).toEqual(["inside"]);
   });
 });
 

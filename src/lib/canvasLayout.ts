@@ -120,6 +120,42 @@ export function sortByCanvasPosition(todos: Todo[], positions: Map<string, Canva
   });
 }
 
+/** 框选矩形（世界坐标），左上角到右下角。 */
+export interface CanvasRect {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/**
+ * 完全落在框选矩形里的卡片。高度优先用屏幕上量到的（悬停展开、拉伸过的卡片都准），
+ * 量不到时按估算高度算。
+ */
+export function todosInsideCanvasRect(
+  todos: Todo[],
+  positions: Map<string, CanvasPosition>,
+  rect: CanvasRect,
+  measuredHeights: Map<string, number> = new Map(),
+): string[] {
+  return todos
+    .filter((todo) => {
+      const position = positions.get(todo.id);
+      if (!position) {
+        return false;
+      }
+      const measured = measuredHeights.get(todo.id);
+      const height = measured && measured > 0 ? measured : estimateCanvasCardHeight(todo, position);
+      return (
+        position.x >= rect.minX &&
+        position.y >= rect.minY &&
+        position.x + canvasCardWidth(position) <= rect.maxX &&
+        position.y + height <= rect.maxY
+      );
+    })
+    .map((todo) => todo.id);
+}
+
 // 画布没有边界，坐标可以是负数；加 0 把 -0 归成 0
 export function snapToCanvasGrid(value: number): number {
   return Math.round(value / 4) * 4 + 0;
