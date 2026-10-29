@@ -1,5 +1,5 @@
 #!/bin/sh
-# EasyDo 工作同步 hook（Claude Code Stop / SessionEnd）。
+# EasyDo 工作同步 hook（Claude Code Stop）。
 #
 # 只做两件事：把 hook 输入登记到 inbox，唤起后台 worker；然后立即返回，不阻塞会话。
 # 判断与维护 Todo 全部在 worker.py 中完成（空闲防抖 + 一次 headless Claude 调用）。

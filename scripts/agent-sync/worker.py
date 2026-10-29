@@ -2,8 +2,9 @@
 
 由 hook.sh 在后台唤起（daemon 模式），同一时间只有一个 daemon 在运行：
 1. 读取 inbox 中 hook 登记的事件，按会话合并状态；
-2. 会话空闲 IDLE 秒、且距该会话上次调用模型满 MIN_INTERVAL 秒后（收到 SessionEnd 则立即），
-   只读取 transcript 中尚未处理的部分；
+2. 会话空闲 IDLE 秒、且距该会话上次调用模型满 MIN_INTERVAL 秒后，
+   只读取 transcript 中尚未处理的部分；第一次见到的会话只读最近 FIRST_LOOKBACK 秒内的内容，
+   避免恢复旧会话时把很久以前的历史当成当前进度补同步；
 3. 没有实质工具调用的片段直接跳过，不调用模型；
 4. 否则调用一次 headless Claude（不开放任何工具），由它输出 JSON 操作计划；
    worker 校验计划后用参数数组调用 easydo CLI 执行，不经过 shell，多行内容原样传入。
@@ -30,6 +31,7 @@ STATE_DIR = Path(
 LOG_PATH = Path(os.environ.get("EASYDO_SYNC_LOG") or Path.home() / "Library/Logs/EasyDo/agent-sync.log")
 IDLE_SECONDS = int(os.environ.get("EASYDO_SYNC_IDLE_SECONDS", "180"))
 MIN_INTERVAL_SECONDS = int(os.environ.get("EASYDO_SYNC_MIN_INTERVAL_SECONDS", "1800"))
+FIRST_LOOKBACK_SECONDS = int(os.environ.get("EASYDO_SYNC_FIRST_LOOKBACK_SECONDS", "86400"))
 MODEL = os.environ.get("EASYDO_SYNC_MODEL", "claude-sonnet-5-5")
 CLAUDE_TIMEOUT_SECONDS = 300
 POLL_SECONDS = 15
@@ -108,22 +110,22 @@ def ingest_inbox(state):
         path.unlink(missing_ok=True)
         if not isinstance(payload, dict):
             continue
+        # 旧版本注册过 SessionEnd，settings 未更新时仍可能收到，忽略即可
+        if payload.get("hook_event_name") != "Stop":
+            continue
         session_id = payload.get("session_id")
         transcript = payload.get("transcript_path")
         if not session_id or not transcript:
             continue
-        session = state["sessions"].setdefault(session_id, {"offset": 0})
+        # 新会话不带 offset，首次同步时据此只读最近的内容
+        session = state["sessions"].setdefault(session_id, {})
         session["transcript"] = transcript
         session["cwd"] = payload.get("cwd") or session.get("cwd")
         session["last_event_at"] = time.time()
         session["dirty"] = True
-        if payload.get("hook_event_name") == "SessionEnd":
-            session["ended"] = True
 
 
 def seconds_until_due(session, now):
-    if session.get("ended"):
-        return 0
     idle_left = IDLE_SECONDS - (now - session.get("last_event_at", 0))
     # 只有真正调用过模型才计入最小间隔，被预过滤跳过的片段不占用间隔
     interval_left = MIN_INTERVAL_SECONDS - (now - session.get("last_synced_at", 0))
@@ -148,19 +150,30 @@ def next_wait(state, now):
 
 
 def prune_state(state, now):
-    # 已结束或一周未活动的会话不再保留，避免状态文件无限增长
+    # 一周未活动的会话不再保留，避免状态文件无限增长；之后再恢复会按新会话只读最近内容
     for session_id in list(state["sessions"]):
         session = state["sessions"][session_id]
         if session.get("dirty"):
             continue
-        if session.get("ended") or now - session.get("last_event_at", 0) > 7 * 86400:
+        if now - session.get("last_event_at", 0) > 7 * 86400:
             del state["sessions"][session_id]
 
 
 # ---------- transcript ----------
 
 
-def read_new_entries(transcript, offset):
+def entry_time(entry):
+    stamp = entry.get("timestamp")
+    if not isinstance(stamp, str):
+        return None
+    try:
+        return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def read_new_entries(transcript, offset, since=None):
+    """since 不为空时只保留该时间戳之后的消息，用于首次同步。"""
     entries = []
     title = None
     with open(transcript, encoding="utf-8") as handle:
@@ -177,6 +190,8 @@ def read_new_entries(transcript, offset):
             title = entry.get("customTitle") or entry.get("aiTitle") or entry.get("title") or entry.get("summary") or title
             continue
         if entry.get("isSidechain") or kind not in ("user", "assistant"):
+            continue
+        if since is not None and (entry_time(entry) or 0) < since:
             continue
         entries.append(entry)
     return entries, len(lines), title
@@ -460,7 +475,8 @@ def process_session(config, session_id, session):
     if not transcript or not Path(transcript).exists():
         log(f"{label} skip: transcript 不存在")
         return
-    entries, line_count, title = read_new_entries(transcript, session.get("offset", 0))
+    since = None if "offset" in session else time.time() - FIRST_LOOKBACK_SECONDS
+    entries, line_count, title = read_new_entries(transcript, session.get("offset", 0), since)
     if title:
         session["title"] = title
     try:
