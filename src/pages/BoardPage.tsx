@@ -990,7 +990,7 @@ export function BoardPage({
               data-inbox-banner
               className="-mx-6 shrink-0 border-b border-easydo-borderSoft bg-easydo-surfaceWarm px-6 py-1 text-xs text-easydo-textMuted"
             >
-              收件箱仅暂存 Todo。请将 Todo 拖到左侧普通 Group 永久保留；未整理的 Todo 会在次日 03:00 后自动删除。
+              次日 03:00 自动清理，拖到左侧 Group 即可保留
             </div>
           ) : null}
           {groupsForView.length === 0 ? (

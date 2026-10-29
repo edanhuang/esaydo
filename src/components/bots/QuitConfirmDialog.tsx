@@ -23,17 +23,19 @@ export function QuitConfirmDialog({
     <Dialog open={runningCount !== null} onOpenChange={(open) => (open ? undefined : onCancel())}>
       <DialogContent
         showCloseButton={false}
+        // 没有 Bot 在运行时只有标题，不挂说明
+        {...(shownCount ? {} : { "aria-describedby": undefined })}
         className="grid-cols-[minmax(0,1fr)] gap-3 border-easydo-border bg-easydo-bg text-easydo-cream shadow-easydo-card sm:max-w-[380px]"
       >
         <DialogHeader>
           <DialogTitle className="text-sm font-semibold text-easydo-cream">
             {shownCount ? `有 ${shownCount} 个 Bot 正在运行，确定退出吗？` : "确定退出 EasyDo 吗？"}
           </DialogTitle>
-          <DialogDescription className="text-xs leading-5 text-easydo-textSecondary">
-            {shownCount
-              ? "退出后它们会在后台继续跑完，下次打开 EasyDo 时同步结果。要中断它们，先在右键菜单里停止。再按一次 ⌘Q 也可以直接退出。"
-              : "再按一次 ⌘Q 也可以直接退出。"}
-          </DialogDescription>
+          {shownCount ? (
+            <DialogDescription className="text-xs leading-5 text-easydo-textSecondary">
+              它们会在后台跑完，下次打开时同步结果。
+            </DialogDescription>
+          ) : null}
         </DialogHeader>
         <div className="flex justify-end gap-2">
           <Button

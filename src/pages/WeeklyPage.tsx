@@ -173,9 +173,7 @@ export function DailyPage({
                         <span className="text-sm text-easydo-textMuted">{formatWeekday(row.date)}</span>
                         {row.date === today ? (
                           <span className="rounded bg-easydo-goldSoft px-2 text-xs text-easydo-cream">今天</span>
-                        ) : null}
-                        <span className="ml-auto text-xs tabular-nums text-easydo-textMuted">{row.items.length} 条</span>
-                      </div>
+                        ) : null}                      </div>
                       <ul className="flex flex-col">
                         {row.items.map((todo) => (
                           <li

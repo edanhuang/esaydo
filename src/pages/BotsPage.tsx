@@ -65,7 +65,6 @@ export function BotsPage({ onNavigate, sidebarCollapsed = false, onToggleSidebar
         >
           {sidebarCollapsed ? <SidebarExpandButton onClick={onToggleSidebar} /> : null}
           <h1 className="text-sm font-semibold text-easydo-cream">Bot</h1>
-          <p className="text-sm text-easydo-textMuted">{bots.length} 个</p>
           <div className="ml-auto flex items-center gap-1">
             <MessagesButton />
             <Button
@@ -94,11 +93,8 @@ export function BotsPage({ onNavigate, sidebarCollapsed = false, onToggleSidebar
               onClick={() => setEditing("new")}
             >
               <Pointer className="bot-hint-nudge size-6 rotate-[20deg] text-easydo-gold" strokeWidth={1.75} aria-hidden />
-              <span className="flex flex-col items-end gap-0.5 rounded-xl border border-easydo-border bg-easydo-surface px-3.5 py-2.5 shadow-easydo-card">
-                <span className="text-sm font-medium text-easydo-cream">点此开启Bot工作流</span>
-                <span className="max-w-[260px] text-xs leading-5 text-easydo-textMuted">
-                  新建一个 Bot，选好 AI、模型和工作目录，就能在 Todo 的右键菜单里派发给它
-                </span>
+              <span className="rounded-xl border border-easydo-border bg-easydo-surface px-3.5 py-2.5 text-sm font-medium text-easydo-cream shadow-easydo-card">
+                新建 Bot，就能在 Todo 右键派发给它
               </span>
             </button>
           ) : (
@@ -151,11 +147,11 @@ function BotRow({ bot, onEdit, onDelete }: { bot: Bot; onEdit: () => void; onDel
         <p className="mt-0.5 truncate text-xs text-easydo-textSecondary" title={bot.directory}>
           {bot.directory}
         </p>
-        <p className="mt-1.5 text-xs tabular-nums text-easydo-textMuted">
-          {usage.runs === 0
-            ? "还没有运行过"
-            : `运行 ${usage.runs} 次 · 输入 ${formatTokens(usage.inputTokens)}（缓存 ${formatTokens(usage.cachedInputTokens)}）· 输出 ${formatTokens(usage.outputTokens)}${usage.costUsd > 0 ? ` · $${usage.costUsd.toFixed(2)}` : ""}`}
-        </p>
+        {usage.runs > 0 ? (
+          <p className="mt-1.5 text-xs tabular-nums text-easydo-textMuted">
+            {`运行 ${usage.runs} 次 · 输入 ${formatTokens(usage.inputTokens)}（缓存 ${formatTokens(usage.cachedInputTokens)}）· 输出 ${formatTokens(usage.outputTokens)}${usage.costUsd > 0 ? ` · $${usage.costUsd.toFixed(2)}` : ""}`}
+          </p>
+        ) : null}
       </div>
       <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
         <Button

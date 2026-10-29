@@ -276,13 +276,11 @@ function headlineOf(detail: string) {
 
 function PaneHeader({
   title,
-  subtitle,
   leading,
   trailing,
   onBack,
 }: {
   title: string;
-  subtitle?: string | null;
   leading?: React.ReactNode;
   trailing?: React.ReactNode;
   onBack?: () => void;
@@ -297,10 +295,7 @@ function PaneHeader({
         <span className="w-1" />
       )}
       {leading}
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold">{title}</p>
-        {subtitle ? <p className="truncate text-[11px] text-easydo-textMuted">{subtitle}</p> : null}
-      </div>
+      <p className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</p>
       {trailing}
     </div>
   );
@@ -319,7 +314,6 @@ function TodoList({
     <>
       <PaneHeader
         title={bot?.name ?? "Bot"}
-        subtitle={`${conversations.length} 条 Todo`}
         leading={bot ? <BotAvatar color={bot.color} /> : null}
       />
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -570,7 +564,7 @@ function useKeepScrollPosition(
   return remember;
 }
 
-/** Bot 运行中占在回复的位置：一支笔来回写，下面一行字说明在干什么、跑了多久 */
+/** Bot 运行中占在回复的位置：一支笔来回写，旁边是谁在处理，下面是跑了多久 */
 function BotWriting({ name, startedAt }: { name: string; startedAt: string | null }) {
   const elapsed = useElapsed(startedAt);
   return (
@@ -580,10 +574,7 @@ function BotWriting({ name, startedAt }: { name: string; startedAt: string | nul
           <span className="bot-writing-line absolute bottom-0.5 left-0 h-px w-full origin-left bg-easydo-textMuted" />
           <PenLine className="bot-writing-pen absolute bottom-1 left-0 size-4 text-easydo-cream" />
         </span>
-        <div className="min-w-0">
-          <p className="text-sm text-easydo-cream">{name} 正在处理…</p>
-          <p className="text-xs text-easydo-textMuted">处理完会通知你，可以先去忙别的</p>
-        </div>
+        <p className="min-w-0 text-sm text-easydo-cream">{name} 正在处理…</p>
       </div>
       {elapsed ? <span className="text-[11px] tabular-nums text-easydo-textMuted">已用时 {elapsed}</span> : null}
     </div>

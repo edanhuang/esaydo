@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Folder } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -82,8 +83,9 @@ export function DispatchDialog({
                 {shown.bot.model ? ` · ${shown.bot.model}` : ""}
               </span>
             </div>
-            <p className="truncate text-xs text-easydo-textMuted" title={shown.bot.directory}>
-              工作目录：{directoryName(shown.bot.directory)}
+            <p className="flex min-w-0 items-center gap-1.5 text-xs text-easydo-textMuted" title={shown.bot.directory}>
+              <Folder className="size-3.5 shrink-0" aria-hidden />
+              <span className="truncate">{directoryName(shown.bot.directory)}</span>
             </p>
             <p className="line-clamp-2 rounded-md bg-easydo-surface px-2.5 py-2 text-easydo-textSecondary">{headline}</p>
             {preview?.sessionTitle ? (
@@ -96,7 +98,7 @@ export function DispatchDialog({
             <Textarea
               aria-label="补充说明"
               value={instruction}
-              placeholder="补充说明（可不填，默认按 Todo 内容处理）"
+              placeholder="补充说明（可选）"
               className={cn(FIELD_TEXTAREA_CLASS, "min-h-20 w-full px-1.5")}
               onChange={(event) => setInstruction(event.target.value)}
               onCompositionStart={() => {
