@@ -16,6 +16,8 @@ pub struct AppState {
     pub runs: bot_runner::RunRegistry,
     /// Bot 运行的输出文件放这里，和数据库在同一个目录下
     pub runs_dir: PathBuf,
+    /// 小石头的工作目录：它只调用 easydo 命令行，这里只用来存它的会话
+    pub steward_dir: PathBuf,
 }
 
 pub fn run() {
@@ -38,10 +40,12 @@ pub fn run() {
                 .parent()
                 .map(|dir| dir.join("bot-runs"))
                 .unwrap_or_else(|| app_data_dir.join("bot-runs"));
+            let steward_dir = runs_dir.with_file_name("steward");
             app.manage(AppState {
                 conn: Mutex::new(conn),
                 runs: bot_runner::RunRegistry::default(),
                 runs_dir,
+                steward_dir,
             });
             // 上次退出时还标着运行中的 Bot：接回还在后台跑的，同步已经跑完的
             bot_runner::recover(app.handle().clone());
@@ -82,6 +86,12 @@ pub fn run() {
             commands::list_bots,
             commands::mark_bot_messages_read,
             commands::stop_bot_run,
+            commands::get_steward_state,
+            commands::list_steward_messages,
+            commands::mark_steward_read,
+            commands::new_steward_conversation,
+            commands::send_to_steward,
+            commands::stop_steward,
             commands::update_bot,
             commands::archive_todo,
             commands::choose_skill_install_directory,

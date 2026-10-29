@@ -288,7 +288,7 @@ export function SettingsDialog({
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
           <SettingsSection title="外观">
-            <SettingsRow label="主题" description="跟随系统时与 macOS 外观一致">
+            <SettingsRow label="主题">
               <ToggleGroup
                 type="single"
                 value={appearanceDraft.mode}
@@ -313,7 +313,7 @@ export function SettingsDialog({
           </SettingsSection>
 
           <SettingsSection title="Bot">
-            <SettingsRow label="终端" description="在消息里点「在终端打开」时用哪个终端打开会话">
+            <SettingsRow label="终端" description="打开会话用的终端">
               <ToggleGroup
                 type="single"
                 aria-label="打开会话的终端"
@@ -420,13 +420,7 @@ export function SettingsDialog({
 
           <SettingsSection
             title="Skill"
-            footer={
-              skillsError ? (
-                <p className="text-xs text-destructive">{skillsError}</p>
-              ) : (
-                <p className="text-xs text-easydo-textMuted">选择的自定义文件夹会保留，之后打开设置时一起检查。</p>
-              )
-            }
+            footer={skillsError ? <p className="text-xs text-destructive">{skillsError}</p> : null}
           >
             <SettingsRow label="要安装的 Skill">
               <div className="flex items-center gap-1.5">

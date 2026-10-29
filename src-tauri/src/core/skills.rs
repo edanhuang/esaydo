@@ -10,6 +10,15 @@ const EMBEDDED_MANIFEST: &str = include_str!("../../../skills/manifest.json");
 const EMBEDDED_EASYDO_SKILL: &str = include_str!("../../../skills/easydo/SKILL.md");
 const MARKER_FILE: &str = ".easydo-skill.json";
 
+/// easydo Skill 里「Todo 内容写法」这一节。小石头不能加载 Skill（只开了 Bash），写法直接放进它的提示词，
+/// 和随 App 打包的 Skill 同源，改 Skill 时两边一起生效
+pub fn todo_writing_rules() -> &'static str {
+    let start = EMBEDDED_EASYDO_SKILL.find("## Todo 内容写法").unwrap_or(0);
+    let rest = &EMBEDDED_EASYDO_SKILL[start..];
+    let end = rest[1..].find("\n## ").map_or(rest.len(), |index| index + 1);
+    rest[..end].trim()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillDefinition {

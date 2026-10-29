@@ -33,11 +33,11 @@ export function FieldBox({
 
 /** 放在 FieldBox 里的单行 input：外观交给外壳，自己只管文字、占位符和光标 */
 export const FIELD_INPUT_CLASS =
-  "h-8 rounded-none border-0 bg-transparent px-2.5 text-[14px] text-easydo-cream shadow-none caret-[hsl(var(--easydo-text-muted)/0.7)] placeholder:text-[14px] placeholder:font-light placeholder:text-[hsl(var(--easydo-text-muted)/0.55)] focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent md:text-[14px]";
+  "h-8 rounded-none border-0 bg-transparent px-2.5 text-[13px] text-easydo-cream shadow-none caret-[hsl(var(--easydo-text-muted)/0.7)] placeholder:text-[13px] placeholder:font-light placeholder:text-[hsl(var(--easydo-text-muted)/0.55)] focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent md:text-[13px]";
 
 /** 放在 FieldBox 里的多行 textarea：与底部录入框的输入区一致 */
 export const FIELD_TEXTAREA_CLASS =
-  "min-h-8 resize-none rounded-none border-0 bg-transparent px-1 py-1.5 text-[15px] leading-5 text-easydo-cream shadow-none caret-[hsl(var(--easydo-text-muted)/0.7)] placeholder:text-[14px] placeholder:font-light placeholder:text-[hsl(var(--easydo-text-muted)/0.55)] focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent md:text-[15px] md:leading-5";
+  "min-h-8 resize-none rounded-none border-0 bg-transparent px-1 py-1.5 text-[14px] leading-5 text-easydo-cream shadow-none caret-[hsl(var(--easydo-text-muted)/0.7)] placeholder:text-[13px] placeholder:font-light placeholder:text-[hsl(var(--easydo-text-muted)/0.55)] focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent md:text-[14px] md:leading-5";
 
 /**
  * 输入框里的发送键：回车图标，平时没有底色，悬停时渐显圆角方形底色。

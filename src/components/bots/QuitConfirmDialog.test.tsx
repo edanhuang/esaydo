@@ -7,18 +7,19 @@ describe("QuitConfirmDialog", () => {
     const onConfirm = vi.fn();
     render(<QuitConfirmDialog runningCount={0} onCancel={vi.fn()} onConfirm={onConfirm} />);
 
-    expect(screen.getByRole("dialog", { name: "确定退出 EasyDo 吗？" })).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "确定退出 EasyDo 吗？" });
+    expect(dialog).not.toHaveAttribute("aria-describedby");
     const quit = screen.getByRole("button", { name: "退出" });
     expect(quit).toHaveFocus();
     fireEvent.click(quit);
     expect(onConfirm).toHaveBeenCalled();
   });
 
-  it("有 Bot 在运行时说明它们会在后台继续跑", () => {
+  it("有 Bot 在运行时说明它们会在后台跑完", () => {
     render(<QuitConfirmDialog runningCount={2} onCancel={vi.fn()} onConfirm={vi.fn()} />);
 
     expect(screen.getByRole("dialog", { name: "有 2 个 Bot 正在运行，确定退出吗？" })).toHaveTextContent(
-      "退出后它们会在后台继续跑完",
+      "它们会在后台跑完，下次打开时同步结果。",
     );
   });
 

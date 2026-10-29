@@ -173,14 +173,13 @@ describe("MessagesDrawer", () => {
     expect(screen.queryByText("草稿")).not.toBeInTheDocument();
   });
 
-  it("Bot 运行中在回复的位置显示写字动效、说明和已用时", async () => {
+  it("Bot 运行中在回复的位置显示写字动效和已用时", async () => {
     const startedAt = new Date(Date.now() - 65_000).toISOString();
     renderDrawer({ activity: { runningBotFor: () => bot, runStartedAt: () => startedAt } });
     await openChat();
 
     const writing = document.querySelector("[data-bot-writing]") as HTMLElement;
     expect(writing).toHaveTextContent("周报助手 正在处理…");
-    expect(writing).toHaveTextContent("处理完会通知你，可以先去忙别的");
     expect(writing).toHaveTextContent(/已用时 1 分 0[5-6] 秒/);
     expect(writing.querySelector(".bot-writing-pen")).not.toBeNull();
   });

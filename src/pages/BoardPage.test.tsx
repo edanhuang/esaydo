@@ -706,7 +706,7 @@ describe("BoardPage", () => {
     await user.click(await screen.findByRole("button", { name: /收件箱/ }));
     expect(await screen.findByText("待归类工作")).toBeInTheDocument();
     expect(document.querySelector("[data-inbox-banner]")).toHaveTextContent(
-      "次日 03:00 后自动删除",
+      "次日 03:00 自动清理",
     );
     expect(document.querySelector("[data-input-group-label]")).toHaveTextContent("工作");
 

@@ -100,7 +100,7 @@ export function TodoInput({
             size="default"
             data-input-group-label
             aria-label="选择录入 Group"
-            className="h-8 max-w-36 shrink-0 rounded border-0 bg-transparent px-2 text-[14px] text-easydo-textSecondary shadow-none hover:bg-easydo-surfaceHover focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-transparent"
+            className="h-8 max-w-36 shrink-0 rounded border-0 bg-transparent px-2 text-[13px] text-easydo-textSecondary shadow-none hover:bg-easydo-surfaceHover focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-transparent"
           >
             <SelectValue placeholder="未配置">
               {currentGroup?.name ?? "未配置"}

@@ -13,7 +13,7 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::bot_service::{PreparedRun, RunUsage};
+use super::bot_service::{PreparedRun, RunKind, RunUsage};
 
 /// 一次运行要执行的命令
 #[derive(Debug, Clone, PartialEq)]
@@ -32,6 +32,8 @@ pub enum AgentEvent {
     FinalText(String),
     Usage(UsageSnapshot),
     Failed(String),
+    /// 一次工具调用执行成功（Claude 的 tool_result 没有标错）；被拒绝或出错的不算
+    ToolSucceeded,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -56,6 +58,34 @@ pub fn session_title(todo_detail: &str) -> String {
         headline.to_string()
     };
     format!("EasyDo · {headline}")
+}
+
+/// 新会话的标题：派发时取 Todo 主句，小石头固定一个
+pub fn run_title(run: &PreparedRun) -> String {
+    match run.kind {
+        RunKind::Todo => session_title(&run.todo_detail),
+        RunKind::Steward => format!("EasyDo · {}", run.bot.name),
+    }
+}
+
+/// 小石头每次运行附带的说明：此刻的看板摘要、能做什么、拿不准时怎么办
+pub fn steward_brief(run: &PreparedRun) -> String {
+    format!(
+        "你是 EasyDo 的「{name}」，替用户维护 EasyDo 里已有的 Todo：查询、修改内容、标记优先级、完成、归档、移动分组、放进收件箱。\n\
+         你只能执行 easydo 命令行（不熟悉时先跑 `easydo help` 或 `easydo <命令> --help`），不能读写文件，也不能执行其他命令。\n\n\
+         本轮开始时的看板（每行：id 前 8 位｜分组｜最后更新｜标记与内容首句）：\n{board}\n\n\
+         规则：\n\
+         - 先在上面的看板里对上用户说的 Todo；需要完整内容、或要找更早完成和归档的，用 `easydo list --json`（可加 `--status all`）查。\n\
+         - 写操作用完整 id 或唯一的 id 前缀。能唯一对上就直接执行；对上多条或拿不准时，把候选列出来问用户，不要动手。\n\
+         - 不删除 Todo。新增或修改 Todo 内容时严格按下面的「Todo 内容写法」：主句只说是什么事、卡在哪，过程和细节拆成一行一个的子项，不要把一段话塞进主句。\n\
+         - 多行内容用 ANSI-C 引号传给 --detail，确保真的换行，例如 `easydo update <id> --detail $'主句\\n- [ ] 子项一\\n- [ ] 子项二'`。\n\
+         - 多轮对话里看板以这一轮的摘要和查询结果为准，之前轮次的摘要可能已经过时。\n\
+         - 最后一段回复交给用户：逐条列出动了哪些 Todo（id 前 8 位、内容首句、做了什么）；没动就说明原因。简短，不要复述过程。\n\n\
+         {rules}",
+        name = run.bot.name,
+        board = run.todo_detail,
+        rules = super::skills::todo_writing_rules(),
+    )
 }
 
 /// 每次运行都附带的说明：Todo 最新内容、回写规则、最终回复的要求
@@ -87,6 +117,9 @@ fn user_request(run: &PreparedRun) -> String {
 }
 
 pub fn build_command(run: &PreparedRun, program: &str, last_message_file: &Path) -> AgentCommand {
+    if run.kind == RunKind::Steward {
+        return steward_command(run, program);
+    }
     let model = run.bot.model.trim();
     match run.bot.provider.as_str() {
         "codex" => {
@@ -145,6 +178,35 @@ pub fn build_command(run: &PreparedRun, program: &str, last_message_file: &Path)
     }
 }
 
+/// 小石头只接 Claude，并且只放行 easydo 命令：内置工具只开 Bash，没预先放行的一律拒绝，不加载 MCP
+fn steward_command(run: &PreparedRun, program: &str) -> AgentCommand {
+    let mut args: Vec<String> = [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--tools",
+        "Bash",
+        "--permission-mode",
+        "dontAsk",
+        "--allowedTools",
+        "Bash(easydo *)",
+        "--strict-mcp-config",
+    ]
+    .map(String::from)
+    .to_vec();
+    let model = run.bot.model.trim();
+    if !model.is_empty() {
+        args.extend(["--model".to_string(), model.to_string()]);
+    }
+    match &run.resume_session_id {
+        Some(session_id) => args.extend(["--resume".to_string(), session_id.clone()]),
+        None => args.extend(["-n".to_string(), run_title(run)]),
+    }
+    args.extend(["--append-system-prompt".to_string(), steward_brief(run)]);
+    AgentCommand { program: program.to_string(), args, cwd: run.cwd.clone(), stdin: run.instruction.clone() }
+}
+
 pub fn parse_event(provider: &str, line: &str) -> Vec<AgentEvent> {
     let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
         return Vec::new();
@@ -192,6 +254,15 @@ pub fn parse_event(provider: &str, line: &str) -> Vec<AgentEvent> {
     if let Some(id) = value.get("session_id").and_then(Value::as_str) {
         if kind == "system" || kind == "result" {
             events.push(AgentEvent::SessionId(id.to_string()));
+        }
+    }
+    if kind == "user" {
+        let results = value.pointer("/message/content").and_then(Value::as_array).into_iter().flatten();
+        for block in results {
+            let is_result = block.get("type").and_then(Value::as_str) == Some("tool_result");
+            if is_result && !block.get("is_error").and_then(Value::as_bool).unwrap_or(false) {
+                events.push(AgentEvent::ToolSucceeded);
+            }
         }
     }
     if kind == "result" {
@@ -421,6 +492,7 @@ mod tests {
 
     fn run(provider: &str, resume: Option<&str>, instruction: &str) -> PreparedRun {
         PreparedRun {
+            kind: RunKind::Todo,
             run_id: "run-1".to_string(),
             session_ref: "ref-1".to_string(),
             todo_id: "todo-1".to_string(),
@@ -455,6 +527,36 @@ mod tests {
         assert!(resumed.args.windows(2).any(|pair| pair == ["--resume", "sess-1"]));
         assert!(!resumed.args.contains(&"-n".to_string()));
         assert_eq!(resumed.stdin, "- [ ] 再补一项");
+    }
+
+    #[test]
+    fn steward_commands_only_allow_easydo_and_carry_the_board() {
+        let mut steward = run("codex", None, "把两条归档");
+        steward.kind = RunKind::Steward;
+        steward.bot.name = "小石头".to_string();
+        steward.bot.model = String::new();
+        steward.todo_detail = "进行中（1 条）：\n- 1a2b3c4d｜工作｜更新于10-29 17:42｜门店质检".to_string();
+
+        // 小石头固定走 Claude，不受 Bot 的 AI 设置影响
+        let fresh = build_command(&steward, "claude", Path::new("/tmp/out.txt"));
+        assert!(fresh.args.windows(2).any(|pair| pair == ["--tools", "Bash"]));
+        assert!(fresh.args.windows(2).any(|pair| pair == ["--permission-mode", "dontAsk"]));
+        assert!(fresh.args.windows(2).any(|pair| pair == ["--allowedTools", "Bash(easydo *)"]));
+        assert!(!fresh.args.contains(&"bypassPermissions".to_string()));
+        assert!(!fresh.args.contains(&"--model".to_string()));
+        assert!(fresh.args.windows(2).any(|pair| pair == ["-n", "EasyDo · 小石头"]));
+        let brief = fresh.args.last().expect("brief");
+        assert!(brief.contains("1a2b3c4d｜工作"));
+        // 写法规则直接带在提示词里：小石头加载不了 Skill
+        assert!(brief.contains("## Todo 内容写法"));
+        assert!(brief.contains("主句：一句话"));
+        assert!(!brief.contains("## 错误"));
+        assert_eq!(fresh.stdin, "把两条归档");
+
+        steward.resume_session_id = Some("sess-9".to_string());
+        let resumed = build_command(&steward, "claude", Path::new("/tmp/out.txt"));
+        assert!(resumed.args.windows(2).any(|pair| pair == ["--resume", "sess-9"]));
+        assert!(!resumed.args.contains(&"-n".to_string()));
     }
 
     #[test]
@@ -507,6 +609,16 @@ mod tests {
         );
         let failed = r#"{"type":"result","is_error":true,"result":"额度不足","usage":{}}"#;
         assert_eq!(parse_event("claude", failed).last(), Some(&AgentEvent::Failed("额度不足".to_string())));
+    }
+
+    #[test]
+    fn counts_only_tool_results_that_succeeded() {
+        let ran = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"已归档"}]}}"#;
+        let denied = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","is_error":true,"content":"Permission denied"}]}}"#;
+        let typed = r#"{"type":"user","message":{"content":"把两条归档"}}"#;
+        assert_eq!(parse_event("claude", ran), vec![AgentEvent::ToolSucceeded]);
+        assert!(parse_event("claude", denied).is_empty());
+        assert!(parse_event("claude", typed).is_empty());
     }
 
     #[test]

@@ -45,13 +45,15 @@ if os.path.exists(settings_path):
     with open(settings_path, encoding="utf-8") as handle:
         settings = json.load(handle)
 hooks = settings.setdefault("hooks", {})
+# 只注册 Stop；SessionEnd 是旧版本注册的，这里一并清掉。
+# 退出或重启客户端时所有打开的会话会一起触发 SessionEnd，会把很久以前的旧会话拉起来补同步。
 for event in ("Stop", "SessionEnd"):
     groups = []
     for group in hooks.get(event, []):
         kept = [hook for hook in group.get("hooks", []) if "easydo-sync/hook.sh" not in hook.get("command", "")]
         if kept:
             groups.append({**group, "hooks": kept})
-    if mode != "--uninstall":
+    if mode != "--uninstall" and event == "Stop":
         groups.append({
             "matcher": "",
             "hooks": [{"type": "command", "command": f'"{hook_path}"', "async": True, "timeout": 10}],
@@ -68,5 +70,5 @@ PY
 if [[ "$mode" == "--uninstall" ]]; then
   echo "已从 $settings 移除 EasyDo 工作同步 hook"
 else
-  echo "已在 $settings 注册 Stop / SessionEnd hook"
+  echo "已在 $settings 注册 Stop hook"
 fi

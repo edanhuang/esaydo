@@ -56,7 +56,7 @@ describe("BotsPage", () => {
 
     expect(document.querySelector("[data-bot-spotlight]")).toBeInTheDocument();
 
-    const hint = screen.getByRole("button", { name: /点此开启Bot工作流/ });
+    const hint = screen.getByRole("button", { name: "新建 Bot，就能在 Todo 右键派发给它" });
     fireEvent.click(hint);
     expect(screen.getByRole("dialog", { name: "新建 Bot" })).toBeInTheDocument();
   });

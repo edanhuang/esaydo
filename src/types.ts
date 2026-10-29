@@ -194,6 +194,17 @@ export interface BotMessage {
   readAt: string | null;
 }
 
+/** 小石头（侧栏桌宠）当前这段对话的状态 */
+export interface StewardState {
+  running: boolean;
+  /** 正在处理的这一句从什么时候开始，没在运行时为 null */
+  startedAt: string | null;
+  unreadCount: number;
+  hasMessages: boolean;
+  /** 上一句处理完的结果：happy = 成功执行了 easydo 命令，confused = 什么都没做成；停止、中断或还没跑过时为 null */
+  lastOutcome: "happy" | "confused" | null;
+}
+
 export interface DispatchPreview {
   sessionTitle: string | null;
   sessionWillReset: boolean;
