@@ -21,6 +21,7 @@ use crate::core::bot_agent;
 use crate::core::bot_service::{
     self, ActiveBotRun, Bot, BotConversation, BotInput, BotMessage, DispatchPreview, TodoUnread,
 };
+use crate::core::steward_service::{self, StewardState};
 use crate::core::terminal::{self, TerminalSettings};
 use crate::core::{canvas_service, diagnostics, todo_service, workspace_service};
 use crate::AppState;
@@ -309,6 +310,78 @@ pub fn stop_bot_run(
                 session_id: None,
                 title: None,
                 usage_totals: None,
+                acted: false,
+            },
+        )
+        .map_err(to_string)?;
+        drop(conn);
+        bot_runner::notify_changed(&app);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_steward_state(state: State<'_, AppState>) -> CommandResult<StewardState> {
+    let conn = lock_conn(&state)?;
+    steward_service::steward_state(&conn).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn list_steward_messages(state: State<'_, AppState>) -> CommandResult<Vec<BotMessage>> {
+    let conn = lock_conn(&state)?;
+    steward_service::steward_messages(&conn).map_err(to_string)
+}
+
+#[tauri::command]
+pub fn mark_steward_read(app: tauri::AppHandle, state: State<'_, AppState>) -> CommandResult<()> {
+    let conn = lock_conn(&state)?;
+    steward_service::mark_steward_read(&conn).map_err(to_string)?;
+    drop(conn);
+    bot_runner::notify_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn new_steward_conversation(app: tauri::AppHandle, state: State<'_, AppState>) -> CommandResult<()> {
+    let conn = lock_conn(&state)?;
+    steward_service::new_steward_conversation(&conn, &state.steward_dir).map_err(to_string)?;
+    drop(conn);
+    bot_runner::notify_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn send_to_steward(app: tauri::AppHandle, state: State<'_, AppState>, text: String) -> CommandResult<()> {
+    let prepared = {
+        let mut conn = lock_conn(&state)?;
+        steward_service::prepare_steward_run(&mut conn, &state.steward_dir, &text).map_err(to_string)?
+    };
+    bot_runner::start(app.clone(), prepared);
+    bot_runner::notify_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_steward(app: tauri::AppHandle, state: State<'_, AppState>) -> CommandResult<()> {
+    let mut conn = lock_conn(&state)?;
+    let Some((run_id, session_ref)) = steward_service::steward_active_run(&conn).map_err(to_string)? else {
+        return Ok(());
+    };
+    // 进程还在：结束它，由运行线程记成已停止；进程已经不在了就直接记
+    if !state.runs.stop(&run_id) {
+        bot_service::finish_run(
+            &mut conn,
+            &bot_service::FinishedRun {
+                run_id,
+                session_ref,
+                status: "stopped".to_string(),
+                usage: bot_service::RunUsage::default(),
+                error: None,
+                final_text: None,
+                session_id: None,
+                title: None,
+                usage_totals: None,
+                acted: false,
             },
         )
         .map_err(to_string)?;

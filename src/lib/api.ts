@@ -7,6 +7,7 @@ import type {
   BotInput,
   BotMessage,
   DispatchPreview,
+  StewardState,
   TerminalSettings,
   TodoUnread,
   BoardLayoutMode,
@@ -257,6 +258,31 @@ export function listBotMessages(todoId: string, botId: string): Promise<BotMessa
 
 export function markBotMessagesRead(todoId: string, botId: string): Promise<void> {
   return invoke("mark_bot_messages_read", { todoId, botId });
+}
+
+export function getStewardState(): Promise<StewardState> {
+  return invoke("get_steward_state");
+}
+
+export function listStewardMessages(): Promise<BotMessage[]> {
+  return invoke("list_steward_messages");
+}
+
+export function markStewardRead(): Promise<void> {
+  return invoke("mark_steward_read");
+}
+
+/** 另起一段和小石头的对话，之前的上下文不再带上 */
+export function newStewardConversation(): Promise<void> {
+  return invoke("new_steward_conversation");
+}
+
+export function sendToSteward(text: string): Promise<void> {
+  return invoke("send_to_steward", { text });
+}
+
+export function stopSteward(): Promise<void> {
+  return invoke("stop_steward");
 }
 
 /** Bot 开始、结束运行或消息已读时触发；返回取消监听的函数 */

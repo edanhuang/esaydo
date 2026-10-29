@@ -688,7 +688,7 @@ function formatTime(iso: string) {
   return date.toDateString() === today.toDateString() ? time : `${date.getMonth() + 1}月${date.getDate()}日 ${time}`;
 }
 
-function MessageBubble({ message }: { message: BotMessage }) {
+export function MessageBubble({ message }: { message: BotMessage }) {
   if (message.role === "system") {
     return <p className="text-center text-xs text-easydo-textMuted">{message.content}</p>;
   }

@@ -194,7 +194,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS bot_sessions (
           id TEXT PRIMARY KEY,
           bot_id TEXT NOT NULL,
-          todo_id TEXT NOT NULL,
+          todo_id TEXT,
           provider TEXT NOT NULL,
           cwd TEXT NOT NULL,
           session_id TEXT,
@@ -238,6 +238,56 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     ensure_column(conn, "bot_runs", "pid", "INTEGER")?;
     ensure_column(conn, "bot_runs", "process_started", "TEXT")?;
     ensure_column(conn, "bot_runs", "output_path", "TEXT")?;
+    ensure_column(conn, "bot_runs", "acted", "INTEGER")?;
+    // 小石头：一个不出现在 Bot 页面的内置 Bot，它的会话不绑定 Todo
+    ensure_column(conn, "bots", "kind", "TEXT NOT NULL DEFAULT 'bot'")?;
+    ensure_session_todo_optional(conn)?;
+    Ok(())
+}
+
+/// 旧库的 bot_sessions.todo_id 是 NOT NULL；SQLite 改不了约束，只能重建表。
+/// 重建期间关掉外键，否则删旧表会把运行记录和消息级联删掉
+fn ensure_session_todo_optional(conn: &Connection) -> Result<()> {
+    let todo_required: bool = conn.query_row(
+        "SELECT \"notnull\" FROM pragma_table_info('bot_sessions') WHERE name = 'todo_id'",
+        [],
+        |row| row.get(0),
+    )?;
+    if !todo_required {
+        return Ok(());
+    }
+    conn.pragma_update(None, "foreign_keys", "OFF")?;
+    let rebuilt = conn.execute_batch(
+        r#"
+        BEGIN IMMEDIATE;
+        CREATE TABLE bot_sessions_rebuild (
+          id TEXT PRIMARY KEY,
+          bot_id TEXT NOT NULL,
+          todo_id TEXT,
+          provider TEXT NOT NULL,
+          cwd TEXT NOT NULL,
+          session_id TEXT,
+          title TEXT,
+          usage_totals TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE (bot_id, todo_id),
+          FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
+          FOREIGN KEY (todo_id) REFERENCES todos(id) ON DELETE CASCADE
+        );
+        INSERT INTO bot_sessions_rebuild
+          SELECT id, bot_id, todo_id, provider, cwd, session_id, title, usage_totals, created_at, updated_at
+          FROM bot_sessions;
+        DROP TABLE bot_sessions;
+        ALTER TABLE bot_sessions_rebuild RENAME TO bot_sessions;
+        COMMIT;
+        "#,
+    );
+    if rebuilt.is_err() {
+        let _ = conn.execute_batch("ROLLBACK;");
+    }
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    rebuilt?;
     Ok(())
 }
 
@@ -525,6 +575,55 @@ mod tests {
             .expect("count inbox views");
         assert_eq!(inbox_groups, 1);
         assert_eq!(inbox_views, 1);
+    }
+
+    #[test]
+    fn bot_sessions_rebuild_keeps_runs_and_messages() {
+        let conn = test_database();
+        // 还原成旧库：todo_id NOT NULL
+        conn.execute_batch(
+            r#"
+            PRAGMA foreign_keys = OFF;
+            DROP TABLE bot_sessions;
+            CREATE TABLE bot_sessions (
+              id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, todo_id TEXT NOT NULL, provider TEXT NOT NULL,
+              cwd TEXT NOT NULL, session_id TEXT, title TEXT, usage_totals TEXT,
+              created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+              UNIQUE (bot_id, todo_id),
+              FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
+              FOREIGN KEY (todo_id) REFERENCES todos(id) ON DELETE CASCADE
+            );
+            PRAGMA foreign_keys = ON;
+            INSERT INTO todos (id, detail, status, created_at, updated_at) VALUES ('t1', '周报', 'active', 'x', 'x');
+            INSERT INTO bots (id, name, color, provider, model, directory, created_at, updated_at)
+              VALUES ('b1', 'Bot', 'teal', 'claude', '', '/work', 'x', 'x');
+            INSERT INTO bot_sessions (id, bot_id, todo_id, provider, cwd, created_at, updated_at)
+              VALUES ('s1', 'b1', 't1', 'claude', '/work', 'x', 'x');
+            INSERT INTO bot_runs (id, session_ref, status, started_at) VALUES ('r1', 's1', 'completed', 'x');
+            INSERT INTO bot_messages (id, session_ref, role, content, created_at) VALUES ('m1', 's1', 'bot', '好', 'x');
+            "#,
+        )
+        .expect("old schema");
+
+        migrate(&conn).expect("migrate");
+        let todo_required: bool = conn
+            .query_row("SELECT \"notnull\" FROM pragma_table_info('bot_sessions') WHERE name = 'todo_id'", [], |row| row.get(0))
+            .expect("table info");
+        assert!(!todo_required);
+        let kept: (i64, i64, i64) = conn
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM bot_sessions), (SELECT COUNT(*) FROM bot_runs), (SELECT COUNT(*) FROM bot_messages)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("counts");
+        assert_eq!(kept, (1, 1, 1));
+        let foreign_keys: i64 = conn.pragma_query_value(None, "foreign_keys", |row| row.get(0)).expect("pragma");
+        assert_eq!(foreign_keys, 1);
+        // 外键仍然生效：删 Bot 级联删掉会话、运行和消息
+        conn.execute("DELETE FROM bots WHERE id = 'b1'", []).expect("delete");
+        let left: i64 = conn.query_row("SELECT COUNT(*) FROM bot_messages", [], |row| row.get(0)).expect("count");
+        assert_eq!(left, 0);
     }
 
     #[test]

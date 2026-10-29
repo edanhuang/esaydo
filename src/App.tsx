@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { BotActivityProvider } from "./components/bots/BotActivity";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
+import { StewardProvider } from "./components/steward/StewardContext";
+import { StewardPanel } from "./components/steward/StewardPanel";
+import { StewardDockedPebble } from "./components/steward/StewardPet";
 import {
   getAppearanceSettings,
   getLayoutSettings,
@@ -92,31 +95,36 @@ export default function App() {
 
   return (
     <BotActivityProvider onOpenBotsPage={openBotsPage}>
-      {view === "daily" ? (
-        <DailyPage
-          onNavigate={setView}
-          sidebarCollapsed={sidebarCollapsed}
-          onToggleSidebar={handleToggleSidebar}
-        />
-      ) : view === "bots" ? (
-        <BotsPage onNavigate={setView} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={handleToggleSidebar} />
-      ) : (
-        <BoardPage
-          onNavigate={setView}
+      <StewardProvider>
+        {view === "daily" ? (
+          <DailyPage
+            onNavigate={setView}
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleSidebar={handleToggleSidebar}
+          />
+        ) : view === "bots" ? (
+          <BotsPage onNavigate={setView} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={handleToggleSidebar} />
+        ) : (
+          <BoardPage
+            onNavigate={setView}
+            shortcutSettings={shortcutSettings}
+            settingsOpen={settingsOpen}
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleSidebar={handleToggleSidebar}
+          />
+        )}
+        <SettingsDialog
+          open={settingsOpen}
           shortcutSettings={shortcutSettings}
-          settingsOpen={settingsOpen}
-          sidebarCollapsed={sidebarCollapsed}
-          onToggleSidebar={handleToggleSidebar}
+          appearanceSettings={appearanceSettings}
+          onOpenChange={setSettingsOpen}
+          onSaveShortcuts={handleSaveSettings}
+          onSaveAppearance={handleSaveAppearance}
         />
-      )}
-      <SettingsDialog
-        open={settingsOpen}
-        shortcutSettings={shortcutSettings}
-        appearanceSettings={appearanceSettings}
-        onOpenChange={setSettingsOpen}
-        onSaveShortcuts={handleSaveSettings}
-        onSaveAppearance={handleSaveAppearance}
-      />
+        <StewardDockedPebble collapsed={sidebarCollapsed} />
+        <StewardPanel collapsed={sidebarCollapsed} />
+      </StewardProvider>
     </BotActivityProvider>
   );
 }
+

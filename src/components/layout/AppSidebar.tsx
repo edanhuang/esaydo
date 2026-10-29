@@ -10,7 +10,7 @@ import {
   Plus,
 } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type React from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
@@ -56,111 +56,123 @@ export function AppSidebar({
   const currentViewGroupIds = new Set(currentBoardView?.groups.map((group) => group.id) ?? []);
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const asideRef = useRef<HTMLElement>(null);
 
-  // 折叠时侧栏完全不占宽度，展开按钮由页面顶栏的 SidebarExpandButton 提供
-  if (collapsed) {
-    return null;
-  }
+  // 收起后里面的按钮不该还能被 Tab 到；React 18 不认 inert 属性，直接设到节点上
+  useEffect(() => {
+    asideRef.current?.toggleAttribute("inert", collapsed);
+  }, [collapsed]);
 
+  // 折叠时侧栏宽度过渡到 0、不占位置，展开按钮由页面顶栏的 SidebarExpandButton 提供。
+  // 里层固定 196px 宽，过渡时内容被裁掉而不是挤着重排
   return (
-    <aside className="hidden h-screen w-[196px] shrink-0 flex-col border-r border-easydo-borderSoft bg-easydo-bgSoft md:flex">
-      <div
-        data-tauri-drag-region
-        className="flex h-11 shrink-0 items-center justify-end pl-[var(--traffic-light-inset)] pr-2"
-      >
-        <SidebarIconButton title="收起侧栏" onClick={onToggleCollapsed}>
-          <PanelLeft data-icon="inline-start" />
-        </SidebarIconButton>
-      </div>
-
-      <div data-sidebar-scroll className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        <nav className="flex w-full flex-col gap-5">
-          <section className="flex w-full flex-col gap-0.5">
-            <SidebarButton
-              active={view === "daily"}
-              icon={<CalendarDays data-icon="inline-start" />}
-              label="每日"
-              onClick={() => onNavigate("daily")}
-            />
-            <SidebarButton
-              active={view === "board" && !inboxActive}
-              icon={<LayoutGrid data-icon="inline-start" />}
-              label="看板"
-              onClick={() => onNavigate("board")}
-            />
-            <SidebarButton
-              active={view === "bots"}
-              icon={<Bot data-icon="inline-start" />}
-              label="Bot"
-              onClick={() => onNavigate("bots")}
-            />
-            {showBoardControls && (inboxCount > 0 || inboxActive) ? (
-              <button
-                type="button"
-                data-sidebar-inbox
-                data-active={inboxActive}
-                onClick={onOpenInbox}
-                className={cn(
-                  sidebarRowClass,
-                  inboxActive
-                    ? "bg-easydo-surfaceActive font-medium text-easydo-cream"
-                    : "text-easydo-textSecondary hover:bg-easydo-surfaceHover hover:text-easydo-cream",
-                )}
-              >
-                <Inbox className="size-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">收件箱</span>
-                <span className="rounded bg-easydo-gold px-1.5 text-xs font-medium tabular-nums text-easydo-onAccent">
-                  {inboxCount}
-                </span>
-              </button>
-            ) : null}
-          </section>
-
-          {showBoardControls ? (
-            <section className="flex flex-col gap-0.5">
-              <p className="px-2 pb-1 text-xs text-easydo-textMuted">分组</p>
-              {groups.map((group, index) => (
-                <SidebarGroupRow
-                  key={group.id}
-                  group={group}
-                  index={index}
-                  included={isAllView || currentViewGroupIds.has(group.id)}
-                  isAllView={isAllView}
-                  dropEnabled={inboxDropEnabled}
-                  onSelectGroup={onSelectGroup}
-                  onSetMembership={onSetBoardViewGroupMembership}
-                />
-              ))}
-            </section>
-          ) : null}
-        </nav>
-      </div>
-
-      {showBoardControls && shortcutsOpen ? (
+    <aside
+      ref={asideRef}
+      aria-hidden={collapsed || undefined}
+      className={cn("easydo-sidebar hidden h-screen shrink-0 overflow-hidden md:flex", collapsed ? "w-0" : "w-[196px]")}
+    >
+      <div className="flex h-full w-[196px] shrink-0 flex-col border-r border-easydo-borderSoft bg-easydo-bgSoft">
         <div
-          data-sidebar-shortcuts
-          className="mx-2 mb-2 flex shrink-0 flex-col gap-1.5 rounded-xl border border-easydo-borderSoft bg-easydo-surface p-3 text-xs text-easydo-textSecondary shadow-easydo-card"
+          data-tauri-drag-region
+          className="flex h-11 shrink-0 items-center justify-end pl-[var(--traffic-light-inset)] pr-2"
         >
-          <ShortcutRow label="上一条" shortcut={shortcutSettings.selectPreviousTodo} />
-          <ShortcutRow label="下一条" shortcut={shortcutSettings.selectNextTodo} />
-          <ShortcutRow label="编辑" shortcut={shortcutSettings.editSelectedTodo} />
-          <ShortcutRow label="完成 / 恢复" shortcut={shortcutSettings.toggleSelectedTodoDone} />
-          <ShortcutRow label="画布 / 列表" shortcut={TOGGLE_LAYOUT_SHORTCUT} />
-        </div>
-      ) : null}
-
-      <div className="flex h-12 shrink-0 items-center gap-2 border-t border-easydo-borderSoft px-3">
-        <img src={easydoLogo} alt="" className="size-6 rounded-md" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-easydo-cream">EasyDo</span>
-        {showBoardControls ? (
-          <SidebarIconButton
-            title="快捷键"
-            pressed={shortcutsOpen}
-            onClick={() => setShortcutsOpen((open) => !open)}
-          >
-            <Keyboard data-icon="inline-start" />
+          <SidebarIconButton title="收起侧栏" onClick={onToggleCollapsed}>
+            <PanelLeft data-icon="inline-start" />
           </SidebarIconButton>
+        </div>
+
+        <div data-sidebar-scroll className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+          <nav className="flex w-full flex-col gap-5">
+            <section className="flex w-full flex-col gap-0.5">
+              <SidebarButton
+                active={view === "daily"}
+                icon={<CalendarDays data-icon="inline-start" />}
+                label="每日"
+                onClick={() => onNavigate("daily")}
+              />
+              <SidebarButton
+                active={view === "board" && !inboxActive}
+                icon={<LayoutGrid data-icon="inline-start" />}
+                label="看板"
+                onClick={() => onNavigate("board")}
+              />
+              <SidebarButton
+                active={view === "bots"}
+                icon={<Bot data-icon="inline-start" />}
+                label="Bot"
+                onClick={() => onNavigate("bots")}
+              />
+              {showBoardControls && (inboxCount > 0 || inboxActive) ? (
+                <button
+                  type="button"
+                  data-sidebar-inbox
+                  data-active={inboxActive}
+                  onClick={onOpenInbox}
+                  className={cn(
+                    sidebarRowClass,
+                    inboxActive
+                      ? "bg-easydo-surfaceActive font-medium text-easydo-cream"
+                      : "text-easydo-textSecondary hover:bg-easydo-surfaceHover hover:text-easydo-cream",
+                  )}
+                >
+                  <Inbox className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">收件箱</span>
+                  <span className="rounded bg-easydo-gold px-1.5 text-xs font-medium tabular-nums text-easydo-onAccent">
+                    {inboxCount}
+                  </span>
+                </button>
+              ) : null}
+            </section>
+
+            {showBoardControls ? (
+              <section className="flex flex-col gap-0.5">
+                <p className="px-2 pb-1 text-xs text-easydo-textMuted">分组</p>
+                {groups.map((group, index) => (
+                  <SidebarGroupRow
+                    key={group.id}
+                    group={group}
+                    index={index}
+                    included={isAllView || currentViewGroupIds.has(group.id)}
+                    isAllView={isAllView}
+                    dropEnabled={inboxDropEnabled}
+                    onSelectGroup={onSelectGroup}
+                    onSetMembership={onSetBoardViewGroupMembership}
+                  />
+                ))}
+              </section>
+            ) : null}
+          </nav>
+        </div>
+
+        {showBoardControls && shortcutsOpen ? (
+          <div
+            data-sidebar-shortcuts
+            className="mx-2 mb-2 flex shrink-0 flex-col gap-1.5 rounded-xl border border-easydo-borderSoft bg-easydo-surface p-3 text-xs text-easydo-textSecondary shadow-easydo-card"
+          >
+            <ShortcutRow label="上一条" shortcut={shortcutSettings.selectPreviousTodo} />
+            <ShortcutRow label="下一条" shortcut={shortcutSettings.selectNextTodo} />
+            <ShortcutRow label="编辑" shortcut={shortcutSettings.editSelectedTodo} />
+            <ShortcutRow label="完成 / 恢复" shortcut={shortcutSettings.toggleSelectedTodoDone} />
+            <ShortcutRow label="画布 / 列表" shortcut={TOGGLE_LAYOUT_SHORTCUT} />
+          </div>
         ) : null}
+
+        {/* 小石头坐在这里（它固定在窗口左下角，收起侧栏时会飞到窗口边缘，见 StewardDockedPebble） */}
+        <div data-steward-seat className="h-11 shrink-0" />
+
+        <div className="flex h-12 shrink-0 items-center gap-2 border-t border-easydo-borderSoft px-3">
+          <img src={easydoLogo} alt="" className="size-6 rounded-md" />
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-easydo-cream">EasyDo</span>
+          {showBoardControls ? (
+            <SidebarIconButton
+              title="快捷键"
+              pressed={shortcutsOpen}
+              onClick={() => setShortcutsOpen((open) => !open)}
+            >
+              <Keyboard data-icon="inline-start" />
+            </SidebarIconButton>
+          ) : null}
+        </div>
       </div>
     </aside>
   );

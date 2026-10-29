@@ -185,6 +185,13 @@
   --bot-plum: 300 22% 42%;
   --bot-rose: 350 45% 46%;
   --bot-graphite: 30 5% 36%;
+  /* 小石头：一颗暖石色的鹅卵石，眼睛用深色 */
+  --steward-body: 29 38% 64%;
+  --steward-nub: 28 32% 57%;
+  --steward-eye: 20 10% 15%;
+  /* 小键盘用深炭色，和石头的暖沙色拉开；按键是浅色短线 */
+  --steward-keyboard: 24 10% 26%;
+  --steward-keys: 40 20% 82%;
 }
 
 .dark {
@@ -262,6 +269,11 @@
   --bot-plum: 300 24% 66%;
   --bot-rose: 350 55% 70%;
   --bot-graphite: 34 6% 62%;
+  --steward-body: 29 36% 62%;
+  --steward-nub: 28 28% 52%;
+  --steward-eye: 24 10% 10%;
+  --steward-keyboard: 34 10% 80%;
+  --steward-keys: 24 8% 34%;
 }
 
 @layer base {
@@ -360,7 +372,137 @@
     animation: bot-writing-line 2s ease-in-out infinite;
   }
 
+  /* 小石头：空闲时慢慢浮动、偶尔眨眼；处理中低头、身子轻轻起伏；眼睛以自身中心缩放 */
+  .steward-float {
+    animation: steward-float 3.2s ease-in-out infinite;
+  }
+
+  /* 处理中两只小手轮流敲键盘 */
+  .steward-tap {
+    animation: steward-tap 0.3s ease-in-out infinite;
+  }
+
+  .steward-tap-alt {
+    animation-delay: -0.15s;
+  }
+
+  /* 没做成：头顶冒出一个问号，晃一晃再淡掉 */
+  .steward-ask {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    animation: steward-ask 3.2s ease-out forwards;
+  }
+
+  .steward-eye {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: steward-blink 4.6s ease-in-out infinite;
+  }
+
+  .steward-eyes {
+    transition: translate 240ms ease-out;
+  }
+
+  .steward-panel-enter {
+    animation: steward-panel-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /*
+   * 小石头只有一个，固定在窗口左下角：侧栏展开时坐在底栏分隔线上，收起时斜 45° 趴在窗口左边缘。
+   * 位置和角度跟侧栏宽度用同样的时长过渡，收起展开时它在两处之间飞过去；纵向用回弹曲线，走一道小弧线
+   */
+  .steward-pet {
+    left: 12px;
+    bottom: 48px;
+    rotate: 0deg;
+    transition:
+      left 380ms cubic-bezier(0.5, 0, 0.2, 1),
+      bottom 380ms cubic-bezier(0.3, 1.5, 0.5, 1),
+      rotate 380ms cubic-bezier(0.5, 0, 0.2, 1),
+      translate 320ms cubic-bezier(0.3, 1.5, 0.5, 1);
+  }
+
+  .steward-pet[data-collapsed] {
+    left: -17px;
+    bottom: 72px;
+    rotate: 45deg;
+  }
+
+  /* 悬停时探出来一点；气泡开着时也保持探出，像在和气泡说话 */
+  .steward-pet[data-collapsed]:hover,
+  .steward-pet[data-collapsed]:focus-visible,
+  .steward-pet[data-collapsed][aria-expanded="true"] {
+    translate: 10px 0;
+  }
+
+  /* 悬停时开心：眼睛弯成月牙，身子一蹦一蹦；处理中保持低头 */
+  .steward-eyes-happy {
+    opacity: 0;
+  }
+
+  .steward-pet:hover [data-mood="idle"] .steward-eyes-plain,
+  .steward-pet:focus-visible [data-mood="idle"] .steward-eyes-plain {
+    opacity: 0;
+  }
+
+  .steward-pet:hover [data-mood="idle"] .steward-eyes-happy,
+  .steward-pet:focus-visible [data-mood="idle"] .steward-eyes-happy {
+    opacity: 1;
+  }
+
+  .steward-pet:hover [data-mood="idle"],
+  .steward-pet:hover [data-mood="done"] {
+    animation: steward-happy 0.7s ease-in-out infinite;
+  }
+
+  /* 收起时悬停：旁边的小圆点来回晃，像在招手 */
+  .steward-wave {
+    opacity: 0;
+    transition: opacity 150ms;
+  }
+
+  .steward-pet[data-collapsed]:hover .steward-wave,
+  .steward-pet[data-collapsed]:focus-visible .steward-wave {
+    opacity: 1;
+    animation: steward-wave 0.5s ease-in-out infinite;
+  }
+
+  .easydo-sidebar {
+    transition: width 380ms cubic-bezier(0.5, 0, 0.2, 1);
+  }
+
+  /*
+   * 对话气泡开在小石头头顶上方，尖角朝下指着它；从侧栏里开始、越过侧栏边缘长到看板上方。
+   * 侧栏收起时跟着小石头贴到窗口边缘，过渡和小石头一致。
+   * 气泡和尖角不描边，用两层投影整体浮起（drop-shadow 按轮廓投影，尖角也带影子）
+   */
+  .steward-bubble {
+    left: 12px;
+    bottom: 88px;
+    filter: drop-shadow(0 1px 1px hsl(30 30% 20% / 0.06)) drop-shadow(0 8px 22px hsl(30 30% 20% / 0.13));
+    transition:
+      left 380ms cubic-bezier(0.5, 0, 0.2, 1),
+      bottom 380ms cubic-bezier(0.3, 1.5, 0.5, 1);
+  }
+
+  /* 收起时小石头斜着探出，头顶约在离窗口底部 113px 处，气泡开在它上方 */
+  .steward-bubble[data-collapsed] {
+    left: 6px;
+    bottom: 124px;
+  }
+
+  .dark .steward-bubble {
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.45)) drop-shadow(0 10px 26px rgb(0 0 0 / 0.5));
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    .steward-float,
+    .steward-tap,
+    .steward-ask,
+    .steward-eye,
+    .steward-panel-enter,
+    .steward-pet:hover [data-mood],
+    .steward-pet[data-collapsed]:hover .steward-wave,
     .bot-writing-pen,
     .bot-writing-line,
     .bot-breathing,
@@ -370,6 +512,13 @@
     .drawer-pane-back,
     .drawer-scrim-enter {
       animation: none;
+    }
+
+    .steward-pet,
+    .steward-bubble,
+    .steward-eyes,
+    .easydo-sidebar {
+      transition: none;
     }
   }
 
@@ -615,4 +764,102 @@
   color: hsl(var(--easydo-gold));
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+@keyframes steward-float {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -2px;
+  }
+}
+
+@keyframes steward-tap {
+  0%,
+  100% {
+    translate: 0 -4px;
+  }
+  45% {
+    translate: 0 1px;
+  }
+  55% {
+    translate: 0 1px;
+  }
+}
+
+@keyframes steward-ask {
+  0% {
+    opacity: 0;
+    translate: 0 4px;
+    scale: 0.4;
+  }
+  12% {
+    opacity: 1;
+    translate: 0 -1px;
+    scale: 1.15;
+  }
+  22% {
+    scale: 1;
+    rotate: -8deg;
+  }
+  34% {
+    rotate: 8deg;
+  }
+  46% {
+    rotate: 0deg;
+  }
+  85% {
+    opacity: 1;
+    translate: 0 -1px;
+  }
+  100% {
+    opacity: 0;
+    translate: 0 -2px;
+  }
+}
+
+@keyframes steward-happy {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  40% {
+    translate: 0 -3px;
+  }
+}
+
+@keyframes steward-wave {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 3px -5px;
+  }
+}
+
+@keyframes steward-blink {
+  0%,
+  92%,
+  100% {
+    scale: 1 1;
+  }
+  95% {
+    scale: 1 0.1;
+  }
+}
+
+@keyframes steward-panel-in {
+  from {
+    opacity: 0;
+    translate: -6px 6px;
+    scale: 0.98;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+  }
 }

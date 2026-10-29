@@ -97,12 +97,22 @@ pub struct DispatchPreview {
     pub running: bool,
 }
 
+/// 运行的对象：派发的一条 Todo，或者和小石头的一段对话
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunKind {
+    Todo,
+    Steward,
+}
+
 /// 一次派发落库后，启动进程需要的全部信息
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreparedRun {
+    pub kind: RunKind,
     pub run_id: String,
     pub session_ref: String,
+    /// 小石头的运行没有 Todo，为空字符串
     pub todo_id: String,
+    /// 派发时是 Todo 内容；小石头运行时是当时的看板摘要
     pub todo_detail: String,
     pub bot: Bot,
     pub cwd: String,
@@ -131,10 +141,17 @@ pub struct FinishedRun {
     pub session_id: Option<String>,
     pub title: Option<String>,
     pub usage_totals: Option<String>,
+    /// 这次运行里至少有一次工具调用执行成功；小石头据此判断它是真的动了手，还是什么都没做成
+    pub acted: bool,
 }
 
+/// 用户自己建的 Bot；小石头不在其中
 pub fn list_bots(conn: &Connection) -> Result<Vec<Bot>> {
-    let mut stmt = conn.prepare(
+    query_bots(conn, "b.kind = 'bot'")
+}
+
+fn query_bots(conn: &Connection, filter: &str) -> Result<Vec<Bot>> {
+    let mut stmt = conn.prepare(&format!(
         r#"
         SELECT b.id, b.name, b.color, b.provider, b.model, b.directory, b.created_at, b.updated_at,
                COUNT(r.id), COALESCE(SUM(r.input_tokens), 0), COALESCE(SUM(r.cached_input_tokens), 0),
@@ -142,10 +159,11 @@ pub fn list_bots(conn: &Connection) -> Result<Vec<Bot>> {
         FROM bots b
         LEFT JOIN bot_sessions s ON s.bot_id = b.id
         LEFT JOIN bot_runs r ON r.session_ref = s.id AND r.status != 'running'
+        WHERE {filter}
         GROUP BY b.id
         ORDER BY b.created_at
-        "#,
-    )?;
+        "#
+    ))?;
     let bots = stmt
         .query_map([], |row| {
             Ok(Bot {
@@ -175,6 +193,18 @@ pub fn get_bot(conn: &Connection, id: &str) -> Result<Bot> {
         .into_iter()
         .find(|bot| bot.id == id)
         .ok_or_else(|| EasyDoError::not_found("未找到 Bot"))
+}
+
+/// 包括小石头在内按 id 取 Bot，供运行恢复等内部流程使用
+pub(crate) fn get_any_bot(conn: &Connection, id: &str) -> Result<Bot> {
+    query_bots(conn, "1 = 1")?
+        .into_iter()
+        .find(|bot| bot.id == id)
+        .ok_or_else(|| EasyDoError::not_found("未找到 Bot"))
+}
+
+pub(crate) fn find_steward(conn: &Connection) -> Result<Option<Bot>> {
+    Ok(query_bots(conn, "b.kind = 'steward'")?.into_iter().next())
 }
 
 fn validate_bot_input(input: &BotInput) -> Result<BotInput> {
@@ -321,7 +351,7 @@ fn find_session(conn: &Connection, todo_id: &str, bot_id: &str) -> Result<Option
         .optional()?)
 }
 
-fn session_running(conn: &Connection, session_ref: &str) -> Result<bool> {
+pub(crate) fn session_running(conn: &Connection, session_ref: &str) -> Result<bool> {
     Ok(conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM bot_runs WHERE session_ref = ?1 AND status = 'running')",
         params![session_ref],
@@ -380,7 +410,15 @@ pub fn prepare_run(conn: &mut Connection, todo_id: &str, bot_id: &str, instructi
     if !Path::new(&bot.directory).is_dir() {
         return Err(EasyDoError::invalid("Bot 的工作目录不存在"));
     }
-    let running: i64 = conn.query_row("SELECT COUNT(*) FROM bot_runs WHERE status = 'running'", [], |row| row.get(0))?;
+    // 小石头的运行不占派发名额
+    let running: i64 = conn.query_row(
+        r#"
+        SELECT COUNT(*) FROM bot_runs r JOIN bot_sessions s ON s.id = r.session_ref
+        WHERE r.status = 'running' AND s.todo_id IS NOT NULL
+        "#,
+        [],
+        |row| row.get(0),
+    )?;
     if running >= MAX_CONCURRENT_RUNS {
         return Err(EasyDoError::invalid_state(format!(
             "已有 {running} 个 Bot 在运行，稍后再试"
@@ -452,6 +490,7 @@ pub fn prepare_run(conn: &mut Connection, todo_id: &str, bot_id: &str, instructi
     tx.commit()?;
 
     Ok(PreparedRun {
+        kind: RunKind::Todo,
         run_id,
         session_ref: session.id,
         todo_id: todo_id.to_string(),
@@ -464,7 +503,7 @@ pub fn prepare_run(conn: &mut Connection, todo_id: &str, bot_id: &str, instructi
     })
 }
 
-fn insert_message(
+pub(crate) fn insert_message(
     conn: &Connection,
     session_ref: &str,
     run_id: Option<&str>,
@@ -499,7 +538,7 @@ pub fn finish_run(conn: &mut Connection, finished: &FinishedRun) -> Result<()> {
         r#"
         UPDATE bot_runs
         SET status = ?1, finished_at = ?2, input_tokens = ?3, cached_input_tokens = ?4,
-            output_tokens = ?5, cost_usd = ?6, error = ?7
+            output_tokens = ?5, cost_usd = ?6, error = ?7, acted = ?9
         WHERE id = ?8
         "#,
         params![
@@ -510,7 +549,8 @@ pub fn finish_run(conn: &mut Connection, finished: &FinishedRun) -> Result<()> {
             finished.usage.output_tokens,
             finished.usage.cost_usd,
             finished.error,
-            finished.run_id
+            finished.run_id,
+            finished.acted
         ],
     )?;
     tx.execute(
@@ -565,24 +605,32 @@ pub fn run_notice(conn: &Connection, finished: &FinishedRun) -> Result<Option<Ru
             SELECT b.name, t.detail
             FROM bot_sessions s
             JOIN bots b ON b.id = s.bot_id
-            JOIN todos t ON t.id = s.todo_id
+            LEFT JOIN todos t ON t.id = s.todo_id
             WHERE s.id = ?1
             "#,
             params![finished.session_ref],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
         )
         .optional()?;
     let Some((bot_name, todo_detail)) = found else {
         return Ok(None);
     };
-    let headline = todo_detail.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or("").to_string();
+    // 小石头的会话没有 Todo，通知里只放回复
+    let headline = todo_detail
+        .as_deref()
+        .and_then(|detail| detail.lines().map(str::trim).find(|line| !line.is_empty()))
+        .unwrap_or("")
+        .to_string();
+    let join = |first: &str, second: &str| {
+        if first.is_empty() { second.to_string() } else { format!("{first}\n{second}") }
+    };
     let reply = finished.final_text.as_deref().map(plain_preview).filter(|text| !text.is_empty());
     let notice = match (finished.status.as_str(), reply) {
-        ("completed", Some(reply)) => RunNotice { title: format!("{bot_name} 回复了"), body: format!("{headline}\n{reply}") },
+        ("completed", Some(reply)) => RunNotice { title: format!("{bot_name} 回复了"), body: join(&headline, &reply) },
         ("completed", None) => RunNotice { title: format!("{bot_name} 处理完了"), body: headline },
         ("failed", _) => {
             let error = plain_preview(finished.error.as_deref().unwrap_or("未知错误"));
-            RunNotice { title: format!("{bot_name} 运行失败"), body: format!("{headline}\n{error}") }
+            RunNotice { title: format!("{bot_name} 运行失败"), body: join(&headline, &error) }
         }
         _ => return Ok(None),
     };
@@ -638,7 +686,7 @@ pub fn list_recoverable_runs(conn: &Connection) -> Result<Vec<RecoverableRun>> {
                    s.todo_id, s.bot_id, s.cwd, s.session_id, s.usage_totals, t.detail
             FROM bot_runs r
             JOIN bot_sessions s ON s.id = r.session_ref
-            JOIN todos t ON t.id = s.todo_id
+            LEFT JOIN todos t ON t.id = s.todo_id
             WHERE r.status = 'running'
             ORDER BY r.started_at
             "#,
@@ -651,12 +699,12 @@ pub fn list_recoverable_runs(conn: &Connection) -> Result<Vec<RecoverableRun>> {
                     row.get::<_, Option<i64>>(2)?,
                     row.get::<_, Option<String>>(3)?,
                     row.get::<_, Option<String>>(4)?,
-                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<String>>(5)?,
                     row.get::<_, String>(6)?,
                     row.get::<_, String>(7)?,
                     row.get::<_, Option<String>>(8)?,
                     row.get::<_, Option<String>>(9)?,
-                    row.get::<_, String>(10)?,
+                    row.get::<_, Option<String>>(10)?,
                 ))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -666,11 +714,12 @@ pub fn list_recoverable_runs(conn: &Connection) -> Result<Vec<RecoverableRun>> {
     for (run_id, session_ref, pid, process_started, output_path, todo_id, bot_id, cwd, session_id, usage_totals, detail) in rows {
         runs.push(RecoverableRun {
             run: PreparedRun {
+                kind: if todo_id.is_some() { RunKind::Todo } else { RunKind::Steward },
                 run_id,
                 session_ref,
-                todo_id,
-                todo_detail: detail,
-                bot: get_bot(conn, &bot_id)?,
+                todo_id: todo_id.unwrap_or_default(),
+                todo_detail: detail.unwrap_or_default(),
+                bot: get_any_bot(conn, &bot_id)?,
                 cwd,
                 resume_session_id: session_id,
                 usage_totals,
@@ -689,7 +738,7 @@ pub fn list_active_runs(conn: &Connection) -> Result<Vec<ActiveBotRun>> {
         r#"
         SELECT r.id, s.todo_id, s.bot_id, r.started_at
         FROM bot_runs r JOIN bot_sessions s ON s.id = r.session_ref
-        WHERE r.status = 'running'
+        WHERE r.status = 'running' AND s.todo_id IS NOT NULL
         ORDER BY r.started_at
         "#,
     )?;
@@ -861,6 +910,7 @@ mod tests {
                 session_id: Some("sess-1".to_string()),
                 title: Some("EasyDo · 整理周报".to_string()),
                 usage_totals: None,
+                acted: false,
             },
         )
         .expect("finish run");
@@ -989,6 +1039,7 @@ mod tests {
             session_id: None,
             title: None,
             usage_totals: None,
+            acted: false,
         };
         finish_run(&mut conn, &finished).expect("finish");
         assert!(list_active_runs(&conn).expect("active").is_empty());
@@ -1011,6 +1062,7 @@ mod tests {
             session_id: None,
             title: None,
             usage_totals: None,
+            acted: false,
         };
         assert_eq!(
             run_notice(&conn, &finished).expect("notice"),

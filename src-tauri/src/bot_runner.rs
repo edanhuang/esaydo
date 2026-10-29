@@ -177,6 +177,7 @@ fn closed(run: &PreparedRun, status: &str, error: Option<String>) -> FinishedRun
         session_id: None,
         title: None,
         usage_totals: None,
+        acted: false,
     }
 }
 
@@ -308,6 +309,8 @@ struct Outcome {
     final_text: Option<String>,
     usage: Option<UsageSnapshot>,
     failure: Option<String>,
+    /// 执行成功的工具调用次数
+    tools_ok: usize,
 }
 
 impl Outcome {
@@ -342,6 +345,7 @@ fn follow_output(
                 AgentEvent::FinalText(text) => outcome.final_text = Some(text),
                 AgentEvent::Usage(snapshot) => outcome.usage = Some(snapshot),
                 AgentEvent::Failed(message) => outcome.failure = Some(message),
+                AgentEvent::ToolSucceeded => outcome.tools_ok += 1,
             }
         }
     };
@@ -404,7 +408,7 @@ fn conclude(run: &PreparedRun, files: &RunFiles, mut outcome: Outcome, exit: Opt
     let title = session_id
         .as_deref()
         .and_then(|id| bot_agent::read_session_title(provider, &run.cwd, id))
-        .or_else(|| run.resume_session_id.is_none().then(|| bot_agent::session_title(&run.todo_detail)));
+        .or_else(|| run.resume_session_id.is_none().then(|| bot_agent::run_title(run)));
 
     let (status, error) = if stopping {
         ("stopped", None)
@@ -431,6 +435,7 @@ fn conclude(run: &PreparedRun, files: &RunFiles, mut outcome: Outcome, exit: Opt
         session_id,
         title,
         usage_totals,
+        acted: outcome.tools_ok > 0,
     }
 }
 
@@ -441,6 +446,7 @@ mod tests {
 
     fn prepared(provider: &str, model: &str, cwd: &str, resume: Option<String>, instruction: &str) -> PreparedRun {
         PreparedRun {
+            kind: crate::core::bot_service::RunKind::Todo,
             run_id: format!("test-{provider}-{}", resume.is_some()),
             session_ref: "ref".to_string(),
             todo_id: "todo-test".to_string(),
