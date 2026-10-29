@@ -92,6 +92,79 @@ describe("BoardCanvas", () => {
     expect(item.style.height).toBe("");
   });
 
+  describe("框选", () => {
+    it("在空白处拖出框，完全落在框里的卡片被选中，松手后框消失", () => {
+      renderCanvas(vi.fn(), [makeTodo("todo-1"), makeTodo("todo-2"), makeTodo("todo-3")]);
+      const viewport = viewportElement();
+
+      // 卡片在 x=24、324、624，框住前两张；第三张只框到一半
+      fireEvent.pointerDown(viewport, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+      fireEvent.pointerMove(viewport, { pointerId: 1, buttons: 1, clientX: 700, clientY: 100 });
+
+      const marquee = document.querySelector("[data-canvas-marquee]") as HTMLElement;
+      expect(marquee.style.width).toBe("690px");
+      expect(marquee.style.height).toBe("90px");
+      expect(marquee.style.transform).toBe("translate(10px, 10px)");
+      expect(selectedIds()).toEqual(["todo-1", "todo-2"]);
+
+      fireEvent.pointerUp(viewport, { pointerId: 1, clientX: 700, clientY: 100 });
+      expect(document.querySelector("[data-canvas-marquee]")).toBeNull();
+      expect(selectedIds()).toEqual(["todo-1", "todo-2"]);
+    });
+
+    it("点画布空白处或画布外，框选取消", () => {
+      renderCanvas(vi.fn(), [makeTodo("todo-1"), makeTodo("todo-2")]);
+      marqueeSelect(10, 10, 700, 100);
+      expect(selectedIds()).toEqual(["todo-1", "todo-2"]);
+
+      fireEvent.pointerDown(viewportElement(), { button: 0, pointerId: 2, clientX: 900, clientY: 400 });
+      fireEvent.pointerUp(viewportElement(), { pointerId: 2, clientX: 900, clientY: 400 });
+      expect(selectedIds()).toEqual([]);
+
+      marqueeSelect(10, 10, 700, 100);
+      fireEvent.pointerDown(document.body, { button: 0, pointerId: 3 });
+      expect(selectedIds()).toEqual([]);
+    });
+
+    it("单击框选外的卡片或单击框选里的卡片，框选都取消", () => {
+      renderCanvas(vi.fn(), [makeTodo("todo-1"), makeTodo("todo-2"), makeTodo("todo-3")]);
+      marqueeSelect(10, 10, 600, 100);
+
+      fireEvent.pointerDown(canvasItem("todo-3"), { button: 0, pointerId: 2, clientX: 650, clientY: 30 });
+      expect(selectedIds()).toEqual([]);
+      fireEvent.pointerUp(canvasItem("todo-3"), { pointerId: 2, clientX: 650, clientY: 30 });
+
+      marqueeSelect(10, 10, 600, 100);
+      fireEvent.pointerDown(canvasItem("todo-1"), { button: 0, pointerId: 3, clientX: 50, clientY: 30 });
+      expect(selectedIds()).toEqual(["todo-1", "todo-2"]);
+      fireEvent.pointerUp(canvasItem("todo-1"), { pointerId: 3, clientX: 50, clientY: 30 });
+      expect(selectedIds()).toEqual([]);
+    });
+
+    it("拖动框选里的任意一张，整组一起移动，松手一起保存", () => {
+      const onPlaceTodos = vi.fn();
+      renderCanvas(onPlaceTodos, [makeTodo("todo-1"), makeTodo("todo-2"), makeTodo("todo-3")], { width: 200 });
+      marqueeSelect(10, 10, 600, 100);
+      const item = canvasItem("todo-2");
+
+      fireEvent.pointerDown(item, { button: 0, pointerId: 2, clientX: 350, clientY: 30 });
+      fireEvent.pointerMove(item, { pointerId: 2, buttons: 1, clientX: 450, clientY: 90 });
+      expect(canvasItem("todo-1").style.transform).toBe("translate(124px, 84px)");
+      expect(canvasItem("todo-2").style.transform).toBe("translate(424px, 84px)");
+      // 框选外的卡片不动
+      expect(canvasItem("todo-3").style.transform).toBe("translate(624px, 24px)");
+
+      fireEvent.pointerUp(item, { pointerId: 2, clientX: 450, clientY: 90 });
+      expect(onPlaceTodos).toHaveBeenLastCalledWith([
+        { todoId: "todo-1", x: 124, y: 84, width: 200, height: null },
+        { todoId: "todo-2", x: 424, y: 84, width: 200, height: null },
+      ]);
+      expect(onPlaceTodos).toHaveBeenCalledTimes(1);
+      // 拖完仍保持框选，可以接着再拖
+      expect(selectedIds()).toEqual(["todo-1", "todo-2"]);
+    });
+  });
+
   describe("悬停展开", () => {
     afterEach(() => {
       vi.useRealTimers();
@@ -151,6 +224,21 @@ describe("BoardCanvas", () => {
     });
   });
 });
+
+function viewportElement() {
+  return document.querySelector("[data-board-canvas] > div") as HTMLElement;
+}
+
+function marqueeSelect(fromX: number, fromY: number, toX: number, toY: number) {
+  const viewport = viewportElement();
+  fireEvent.pointerDown(viewport, { button: 0, pointerId: 9, clientX: fromX, clientY: fromY });
+  fireEvent.pointerMove(viewport, { pointerId: 9, buttons: 1, clientX: toX, clientY: toY });
+  fireEvent.pointerUp(viewport, { pointerId: 9, clientX: toX, clientY: toY });
+}
+
+function selectedIds() {
+  return [...document.querySelectorAll<HTMLElement>("[data-canvas-selected]")].map((item) => item.dataset.canvasItem);
+}
 
 function canvasItem(todoId: string) {
   return document.querySelector(`[data-canvas-item="${todoId}"]`) as HTMLElement;

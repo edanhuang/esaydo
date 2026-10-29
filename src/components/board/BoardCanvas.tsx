@@ -21,6 +21,8 @@ import {
   visibleChecklistRowCount,
   placeUnpositionedTodos,
   snapToCanvasGrid,
+  todosInsideCanvasRect,
+  type CanvasRect,
 } from "@/lib/canvasLayout";
 import {
   CANVAS_MAX_ZOOM,
@@ -118,10 +120,20 @@ interface DragState {
   startY: number;
   originX: number;
   originY: number;
+  // 一起移动的卡片（含按住的这张）和各自按下时的位置；没有框选时只有按住的这张
+  group: Array<{ todoId: string; originX: number; originY: number }>;
   moved: boolean;
   // 卡片当前所在的世界坐标，只给排查日志用
   lastX: number;
   lastY: number;
+}
+
+// 框选：startX、startY 是按下时的世界坐标
+interface MarqueeState {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  moved: boolean;
 }
 
 export function BoardCanvas({
@@ -155,7 +167,14 @@ export function BoardCanvas({
   const dragRef = useRef<DragState | null>(null);
   // 拖动被中途作废后，记下来看随后的松手落在哪里
   const abortedDragRef = useRef<string | null>(null);
-  const [dragOffset, setDragOffset] = useState<{ todoId: string; x: number; y: number } | null>(null);
+  // todoId 是按住的那张，todoIds 是跟着一起动的所有卡片
+  const [dragOffset, setDragOffset] = useState<{ todoId: string; todoIds: Set<string>; dx: number; dy: number } | null>(
+    null,
+  );
+  const marqueeRef = useRef<MarqueeState | null>(null);
+  const [marquee, setMarquee] = useState<CanvasRect | null>(null);
+  // 框选出来的卡片；和 BoardPage 的单选各管各的，拖动其中一张时整组一起走
+  const [groupSelection, setGroupSelection] = useState<Set<string>>(() => new Set());
   const resizeRef = useRef<ResizeState | null>(null);
   // vertical：拉的是上下边或角，拉伸中卡片高度就是指针给的高度，放不下的内容先裁掉
   const [liveRect, setLiveRect] = useState<(CardRect & { todoId: string; vertical: boolean }) | null>(null);
@@ -175,6 +194,18 @@ export function BoardCanvas({
     },
     [],
   );
+
+  // 按在卡片以外的任何地方都取消框选；按在卡片上由卡片自己决定
+  useEffect(() => {
+    function clearGroupSelectionOutsideCards(event: PointerEvent) {
+      if (event.target instanceof Element && event.target.closest("[data-canvas-item]")) {
+        return;
+      }
+      setGroupSelection((current) => (current.size === 0 ? current : new Set()));
+    }
+    window.addEventListener("pointerdown", clearGroupSelectionOutsideCards, true);
+    return () => window.removeEventListener("pointerdown", clearGroupSelectionOutsideCards, true);
+  }, []);
 
   // 还没有位置的 Todo 从左上角开始自动排开，并立即保存，之后位置固定
   useLayoutEffect(() => {
@@ -424,6 +455,15 @@ export function BoardCanvas({
     if (!position) {
       return;
     }
+    // 按住框选里的卡片整组一起拖；按住框选外的卡片先取消框选，只拖这一张
+    const inGroup = groupSelection.has(todo.id);
+    if (!inGroup && groupSelection.size > 0) {
+      setGroupSelection(new Set());
+    }
+    const group = (inGroup ? todos.filter((item) => groupSelection.has(item.id)) : [todo]).flatMap((item) => {
+      const origin = positions.get(item.id);
+      return origin ? [{ todoId: item.id, originX: origin.x, originY: origin.y }] : [];
+    });
     const start = toWorld(event.clientX, event.clientY);
     dragRef.current = {
       todoId: todo.id,
@@ -432,6 +472,7 @@ export function BoardCanvas({
       startY: start.y,
       originX: position.x,
       originY: position.y,
+      group,
       moved: false,
       lastX: position.x,
       lastY: position.y,
@@ -484,7 +525,7 @@ export function BoardCanvas({
     drag.moved = true;
     drag.lastX = drag.originX + dx;
     drag.lastY = drag.originY + dy;
-    setDragOffset({ todoId: drag.todoId, x: drag.lastX, y: drag.lastY });
+    setDragOffset({ todoId: drag.todoId, todoIds: new Set(drag.group.map((item) => item.todoId)), dx, dy });
   }
 
   function handlePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
@@ -501,21 +542,91 @@ export function BoardCanvas({
     dragRef.current = null;
     setDragOffset(null);
     if (!drag.moved) {
+      // 单击卡片（没拖动）就是单选它，框选随之取消
+      setGroupSelection((current) => (current.size === 0 ? current : new Set()));
       return;
     }
     collapseUnlessPointerInside(drag.todoId, event.clientX, event.clientY);
     const point = toWorld(event.clientX, event.clientY);
-    const x = snapToCanvasGrid(drag.originX + point.x - drag.startX);
-    const y = snapToCanvasGrid(drag.originY + point.y - drag.startY);
+    const dx = point.x - drag.startX;
+    const dy = point.y - drag.startY;
     logCanvas(
-      `drag drop todo=${shortId(drag.todoId)} pointer=${event.pointerType}#${event.pointerId} client=${fmtPoint(event.clientX, event.clientY)} from=${fmtPoint(drag.originX, drag.originY)} to=${fmtPoint(x, y)}`,
+      `drag drop todo=${shortId(drag.todoId)} pointer=${event.pointerType}#${event.pointerId} client=${fmtPoint(event.clientX, event.clientY)} from=${fmtPoint(drag.originX, drag.originY)} to=${fmtPoint(snapToCanvasGrid(drag.originX + dx), snapToCanvasGrid(drag.originY + dy))} cards=${drag.group.length}`,
     );
-    const position = positions.get(drag.todoId);
-    // 移动时保留拉伸过的宽高
-    onPlaceTodos([
-      { todoId: drag.todoId, x, y, width: position?.width ?? null, height: position?.height ?? null },
-    ]);
+    // 移动时保留拉伸过的宽高；整组一次保存
+    onPlaceTodos(
+      drag.group.map((item) => {
+        const position = positions.get(item.todoId);
+        return {
+          todoId: item.todoId,
+          x: snapToCanvasGrid(item.originX + dx),
+          y: snapToCanvasGrid(item.originY + dy),
+          width: position?.width ?? null,
+          height: position?.height ?? null,
+        };
+      }),
+    );
     onSelectTodo(drag.todoId);
+  }
+
+  // 在空白处按住拖动画出框选矩形，完全落在框里的卡片被选中
+  function handleViewportPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || (event.target as HTMLElement).closest("[data-canvas-item], [data-canvas-draft]")) {
+      return;
+    }
+    const start = toWorld(event.clientX, event.clientY);
+    marqueeRef.current = { pointerId: event.pointerId, startX: start.x, startY: start.y, moved: false };
+  }
+
+  function handleViewportPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const state = marqueeRef.current;
+    if (!state || state.pointerId !== event.pointerId) {
+      return;
+    }
+    // 还没起框就在视口外松了手，收不到 pointerup，这里兜底清掉
+    if (event.buttons === 0) {
+      marqueeRef.current = null;
+      setMarquee(null);
+      return;
+    }
+    const point = toWorld(event.clientX, event.clientY);
+    if (!state.moved && Math.hypot(point.x - state.startX, point.y - state.startY) < DRAG_THRESHOLD) {
+      return;
+    }
+    if (!state.moved) {
+      // 起框后捕获指针，拖出视口也能继续
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      state.moved = true;
+    }
+    const rect = {
+      minX: Math.min(state.startX, point.x),
+      minY: Math.min(state.startY, point.y),
+      maxX: Math.max(state.startX, point.x),
+      maxY: Math.max(state.startY, point.y),
+    };
+    setMarquee(rect);
+    setGroupSelection(new Set(todosInsideCanvasRect(todos, positions, rect, measureCardHeights())));
+  }
+
+  function handleViewportPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    if (marqueeRef.current?.pointerId !== event.pointerId) {
+      return;
+    }
+    marqueeRef.current = null;
+    setMarquee(null);
+  }
+
+  /** 卡片在屏幕上的实际高度（世界坐标），悬停展开的也按展开后的算 */
+  function measureCardHeights() {
+    const heights = new Map<string, number>();
+    const zoomNow = cameraRef.current.zoom;
+    for (const item of worldRef.current?.querySelectorAll<HTMLElement>("[data-canvas-item]") ?? []) {
+      const id = item.dataset.canvasItem;
+      if (id) {
+        heights.set(id, item.getBoundingClientRect().height / zoomNow);
+      }
+    }
+    return heights;
   }
 
   function handleResizeStart(event: ReactPointerEvent<HTMLDivElement>, todo: Todo, direction: ResizeDirection) {
@@ -646,7 +757,15 @@ export function BoardCanvas({
   return (
     <div ref={containerRef} data-board-canvas className="relative min-h-0 flex-1 overflow-clip">
       {/* overflow-clip 不是滚动容器：聚焦输入框时浏览器没法偷偷滚动它，坐标只由相机决定 */}
-      <div ref={viewportRef} className="absolute inset-0 overflow-clip" onDoubleClick={handleViewportDoubleClick}>
+      <div
+        ref={viewportRef}
+        className="absolute inset-0 overflow-clip"
+        onDoubleClick={handleViewportDoubleClick}
+        onPointerDown={handleViewportPointerDown}
+        onPointerMove={handleViewportPointerMove}
+        onPointerUp={handleViewportPointerEnd}
+        onPointerCancel={handleViewportPointerEnd}
+      >
         {todos.length === 0 && !draft ? (
           <div className="grid h-full select-none place-items-center text-sm text-easydo-textMuted">
             当前 View 没有 Todo，双击空白处新建
@@ -659,14 +778,17 @@ export function BoardCanvas({
                 if (!position) {
                   return null;
                 }
-                const dragging = dragOffset?.todoId === todo.id;
+                const dragging = dragOffset?.todoIds.has(todo.id) ?? false;
+                // 整组拖动时只有按住的那张展开，其余保持收起，免得互相顶开
+                const grabbed = dragOffset?.todoId === todo.id;
                 const resizing = liveRect?.todoId === todo.id ? liveRect : null;
-                const x = resizing ? resizing.x : dragging ? dragOffset.x : position.x;
-                const y = resizing ? resizing.y : dragging ? dragOffset.y : position.y;
+                const x = resizing ? resizing.x : dragOffset && dragging ? position.x + dragOffset.dx : position.x;
+                const y = resizing ? resizing.y : dragOffset && dragging ? position.y + dragOffset.dy : position.y;
                 const width = resizing ? resizing.width : canvasCardWidth(position);
                 const height = resizing?.vertical ? resizing.height : undefined;
                 const minHeight = height === undefined ? (position.height ?? undefined) : undefined;
                 const selected = todo.id === selectedTodoId;
+                const marked = groupSelection.has(todo.id);
                 return (
                   <div
                     key={todo.id}
@@ -676,11 +798,15 @@ export function BoardCanvas({
                       // 编辑中的卡片会撑高展示全部内容，放到最上层免得被别的卡片盖住
                       dragging || resizing || editingTodoId === todo.id
                         ? "z-30"
-                        : selected
+                        : selected || marked
                           ? "z-20"
                           : "z-10 hover:z-20",
                       dragging && "cursor-grabbing",
+                      // 框选中的卡片描一圈和单选一样的边，但不像单选那样展开
+                      marked &&
+                        "after:pointer-events-none after:absolute after:inset-0 after:rounded-[4px] after:border after:border-easydo-gold",
                     )}
+                    data-canvas-selected={marked || undefined}
                     style={{ width, height, minHeight, transform: `translate(${x}px, ${y}px)` }}
                     // 悬停范围是整个外层，伸出卡片的缩放手柄、Bot 标签也算在内
                     onPointerEnter={() => handleCardEnter(todo.id)}
@@ -722,7 +848,7 @@ export function BoardCanvas({
                     <TodoCard
                       {...cardProps(todo)}
                       variant="canvas"
-                      expanded={hoveredTodoId === todo.id || dragging || Boolean(resizing)}
+                      expanded={(hoveredTodoId === todo.id && !dragOffset) || grabbed || Boolean(resizing)}
                       visibleChecklistRows={visibleChecklistRowCount(
                         todo,
                         resizing ? { ...position, width: resizing.width, height: resizing.height } : position,
@@ -757,6 +883,17 @@ export function BoardCanvas({
               })}
               {draft ? <CanvasDraftCard x={draft.x} y={draft.y} onCommit={commitDraft} onCancel={() => setDraft(null)} /> : null}
             </div>
+            {marquee ? (
+              <div
+                data-canvas-marquee
+                className="pointer-events-none absolute left-0 top-0 z-30 rounded-[2px] border border-[hsl(var(--easydo-gold)/0.7)] bg-[hsl(var(--easydo-gold)/0.08)]"
+                style={{
+                  width: (marquee.maxX - marquee.minX) * cameraRef.current.zoom,
+                  height: (marquee.maxY - marquee.minY) * cameraRef.current.zoom,
+                  transform: `translate(${(marquee.minX - cameraRef.current.x) * cameraRef.current.zoom}px, ${(marquee.minY - cameraRef.current.y) * cameraRef.current.zoom}px)`,
+                }}
+              />
+            ) : null}
           </>
         )}
       </div>
