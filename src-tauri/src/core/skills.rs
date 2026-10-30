@@ -447,7 +447,7 @@ mod tests {
     fn embedded_catalog_contains_easydo_skill() {
         let catalog = SkillCatalog::embedded().expect("load embedded catalog");
         assert_eq!(catalog.skills[0].name, "easydo");
-        assert_eq!(catalog.skills[0].version, "0.5.1");
+        assert_eq!(catalog.skills[0].version, "0.6.0");
         assert!(EMBEDDED_EASYDO_SKILL.contains("easydo list --json"));
         assert!(EMBEDDED_EASYDO_SKILL.contains("不得直接读写"));
         assert!(EMBEDDED_EASYDO_SKILL.contains("## Todo 内容写法"));
@@ -514,7 +514,7 @@ mod tests {
             .expect("codex status");
         assert_eq!(codex.state, "outdated");
         assert!(codex.message.contains("0.1.0"));
-        assert!(codex.message.contains("0.5.1"));
+        assert!(codex.message.contains("0.6.0"));
 
         let result = install_skills(&embedded, "easydo", &[AgentTarget::Codex], home.path())
             .expect("upgrade");

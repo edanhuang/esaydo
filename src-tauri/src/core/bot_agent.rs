@@ -77,10 +77,16 @@ pub fn steward_brief(run: &PreparedRun) -> String {
          规则：\n\
          - 先在上面的看板里对上用户说的 Todo；需要完整内容、或要找更早完成和归档的，用 `easydo list --json`（可加 `--status all`）查。\n\
          - 写操作用完整 id 或唯一的 id 前缀。能唯一对上就直接执行；对上多条或拿不准时，把候选列出来问用户，不要动手。\n\
-         - 不删除 Todo。新增或修改 Todo 内容时严格按下面的「Todo 内容写法」：主句只说是什么事、卡在哪，过程和细节拆成一行一个的子项，不要把一段话塞进主句。\n\
-         - 多行内容用 ANSI-C 引号传给 --detail，确保真的换行，例如 `easydo update <id> --detail $'主句\\n- [ ] 子项一\\n- [ ] 子项二'`。\n\
-         - 多轮对话里看板以这一轮的摘要和查询结果为准，之前轮次的摘要可能已经过时。\n\
-         - 最后一段回复交给用户：逐条列出动了哪些 Todo（id 前 8 位、内容首句、做了什么）；没动就说明原因。简短，不要复述过程。\n\n\
+         - 不删除 Todo。新增或修改 Todo 内容时严格按下面的「Todo 内容写法」：第一行是 20 字以内的标题，只说这是什么事；\
+           第二行可选，一句话说卡在哪或下一步；排查过程不写进任何一行，已完成的子项只留关键节点，写成短语。\n\
+         - 用户说「改成……」「现在……」这类新进度时，是改写这条 Todo 的当前状态，不是往后追加：改写状态行，\
+           被新进度取代的旧待办删掉或勾掉；拿不准旧待办还要不要时，先列出来问用户，不要原样留着。各行之间不写重复的内容。\n\
+         - 多行内容用 ANSI-C 引号传给 --detail，确保真的换行，例如 `easydo update <id> --detail $'标题\\n状态\\n- [ ] 子项一'`。\n\
+         - 多轮对话里看板以这一轮的摘要和查询结果为准，之前轮次的摘要可能已经过时。\n\n\
+         回复（显示在一个小对话气泡里，要短）：\n\
+         - 第一句直接说结果，用 Todo 的标题指代它；不主动报 id，只有需要用户区分是哪一条时才带上。不加粗，不用表情。\n\
+         - 动了 Todo 时一行一条：「标题：做了什么」。不复述过程。\n\
+         - 闲聊、误触、看不懂的输入，简短回一句就行，不要写「本轮没有改动任何 Todo」这类套话。\n\n\
          {rules}",
         name = run.bot.name,
         board = run.todo_detail,
@@ -549,8 +555,12 @@ mod tests {
         assert!(brief.contains("1a2b3c4d｜工作"));
         // 写法规则直接带在提示词里：小石头加载不了 Skill
         assert!(brief.contains("## Todo 内容写法"));
-        assert!(brief.contains("主句：一句话"));
+        assert!(brief.contains("标题行（第一行）"));
         assert!(!brief.contains("## 错误"));
+        // 不再要求把过程拆进子项，也不再要求没改动时说明原因（会变成每句都带的套话）
+        assert!(!brief.contains("过程和细节拆成"));
+        assert!(brief.contains("不是往后追加"));
+        assert!(brief.contains("不要写「本轮没有改动任何 Todo」"));
         assert_eq!(fresh.stdin, "把两条归档");
 
         steward.resume_session_id = Some("sess-9".to_string());
