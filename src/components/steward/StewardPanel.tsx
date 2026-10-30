@@ -81,16 +81,19 @@ export function StewardPanel({ collapsed }: { collapsed: boolean }) {
     }
   }, [open]);
 
-  // 有新消息或开始处理时滚到底
+  // 打开时、有新消息或开始处理时滚到底。关着时组件还在，重新打开不会重新挂载，所以「刚打开」要单独算
   const seenCountRef = useRef(0);
   const wasRunningRef = useRef(running);
+  const wasOpenRef = useRef(false);
   useLayoutEffect(() => {
     const list = listRef.current;
+    const opened = open && !wasOpenRef.current;
     const grew = messages.length > seenCountRef.current;
     const started = running && !wasRunningRef.current;
     seenCountRef.current = messages.length;
     wasRunningRef.current = running;
-    if (list && (grew || started)) {
+    wasOpenRef.current = open;
+    if (list && (opened || grew || started)) {
       list.scrollTop = list.scrollHeight;
     }
   }, [messages, running, open]);
