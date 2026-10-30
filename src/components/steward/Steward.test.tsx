@@ -174,6 +174,30 @@ describe("小石头", () => {
     expect(input.selectionStart).toBe("把这两条归档".length);
   });
 
+  it("关上再打开时停在最新消息，而不是回到最上面", async () => {
+    vi.mocked(listStewardMessages).mockResolvedValue(messages);
+    // jsdom 不排版：把滚动高度固定成 640，并记下每次设置的 scrollTop
+    const scrolledTo: number[] = [];
+    const height = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(640);
+    const top = vi.spyOn(HTMLElement.prototype, "scrollTop", "set").mockImplementation((value) => {
+      scrolledTo.push(value);
+    });
+    const base = { state: idle, setOpen: vi.fn(), version: 0, refresh: async () => undefined };
+    const view = (open: boolean) => (
+      <StewardContext.Provider value={{ ...base, open }}>
+        <StewardPanel collapsed={false} />
+      </StewardContext.Provider>
+    );
+    const { rerender } = render(view(true));
+    await screen.findByText("已归档 2 条");
+    rerender(view(false));
+    scrolledTo.length = 0;
+    rerender(view(true));
+    expect(scrolledTo).toContain(640);
+    height.mockRestore();
+    top.mockRestore();
+  });
+
   it("按 Esc 收起面板", async () => {
     const context = renderWith(<StewardPanel collapsed={false} />);
     fireEvent.keyDown(await screen.findByRole("textbox", { name: "对小石头说" }), { key: "Escape" });

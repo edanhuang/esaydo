@@ -2,7 +2,7 @@
   "skills": [
     {
       "name": "easydo",
-      "version": "0.5.1",
+      "version": "0.6.0",
       "description": "通过 EasyDo CLI 管理 Todo 并规定 Todo 内容写法；工作结果同步由后台 hook 自动完成。",
       "path": "easydo"
     }
